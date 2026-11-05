@@ -12,7 +12,7 @@ const rawUrl =
   process.env.POSTGRES_PRISMA_URL;
 
 let host = process.env.DB_HOST;
-let port = Number(process.env.DB_PORT || 5432);
+let port = Number(process.env.DB_PORT || 6543);
 let user = process.env.DB_USER || 'postgres';
 let password = process.env.DB_PASSWORD || '';
 let database = process.env.DB_NAME || 'postgres';
