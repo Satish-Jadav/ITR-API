@@ -21,15 +21,14 @@ This guide provides end-to-end instructions for deploying the **ZeroTax-Local No
    - **Database Password:** Generate a strong 32+ character password.
    - **Region:** Select **`ap-south-1` (Mumbai, India)** (Mandatory for RBI & DPDP Act compliance).
    - **Pricing Plan:** Pro / Team (recommended for production RLS and daily automated backups).
-3. Once the database provisions, get your **Database Connection Parameters**:
-   - **Recommended (Individual Variables):** In the Connect modal $\rightarrow$ click **Direct** (or Settings ⚙ $\rightarrow$ Database) and note the individual fields:
+3. Once the database provisions, get your **PostgreSQL Connection Parameters**:
+   - In the Connect modal $\rightarrow$ click **Direct** (or Settings ⚙ $\rightarrow$ Database) and copy the individual fields:
      - `DB_HOST`: e.g. `aws-0-ap-south-1.pooler.supabase.com`
-     - `DB_PORT`: `6543` (Transaction pooler)
+     - `DB_PORT`: `6543` (Transaction pooler) or `5432` (Direct)
      - `DB_NAME`: `postgres`
-     - `DB_USER`: `postgres.[PROJECT_REF]`
+     - `DB_USER`: `postgres` (or `postgres.[PROJECT_REF]`)
      - `DB_PASSWORD`: Your database password
-     *(Using separate variables prevents URL encoding issues with special characters in your password).*
-   - **Alternative (Single URI):** Select **URI** $\rightarrow$ `postgresql://postgres.[PROJECT_REF]:[PASSWORD]@aws-0-ap-south-1.pooler.supabase.com:6543/postgres?sslmode=require` into `DATABASE_URL`.
+     *(Discrete variables completely eliminate URL encoding issues with special characters in passwords).*
 
 4. Find your **Project URL & API Keys**:
    - In the left sidebar, click **Settings** (⚙ gear icon) $\rightarrow$ Click **API** (or **API Keys** / **Data API**).
@@ -105,7 +104,11 @@ npm install -g vercel
 vercel link
 
 # Add environment variables
-vercel env add DATABASE_URL production
+vercel env add DB_HOST production
+vercel env add DB_PORT production
+vercel env add DB_NAME production
+vercel env add DB_USER production
+vercel env add DB_PASSWORD production
 vercel env add SUPABASE_URL production
 vercel env add SUPABASE_SERVICE_ROLE_KEY production
 vercel env add SUPABASE_ANON_KEY production
@@ -131,7 +134,11 @@ vercel --prod
 | Variable Name | Description | Example / Note |
 | :--- | :--- | :--- |
 | `NODE_ENV` | Runtime environment | `production` |
-| `DATABASE_URL` | Supabase pooled connection string | `postgresql://postgres.[REF]:[PASS]@aws-0-ap-south-1.pooler.supabase.com:6543/postgres?sslmode=require` |
+| `DB_HOST` | PostgreSQL Host | `aws-0-ap-south-1.pooler.supabase.com` |
+| `DB_PORT` | PostgreSQL Port | `6543` (Pooler) or `5432` |
+| `DB_NAME` | Database Name | `postgres` |
+| `DB_USER` | Database User | `postgres` or `postgres.[REF]` |
+| `DB_PASSWORD` | Database Password | Your DB password |
 | `SUPABASE_URL` | Supabase API endpoint | `https://[REF].supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Admin key for Supabase Storage | `eyJhbGciOiJI...` |
 | `SUPABASE_ANON_KEY` | Public key | `eyJhbGciOiJI...` |

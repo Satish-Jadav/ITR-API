@@ -8,14 +8,14 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(3000),
   API_BASE_URL: z.string().url().default('https://api.zerotax.in'),
 
-  // Supabase PostgreSQL & Storage
-  DATABASE_URL: z.string().optional(),
-  DB_HOST: z.string().optional(),
+  // PostgreSQL Connection Parameters (Discrete Variables Only)
+  DB_HOST: z.string().min(1, 'DB_HOST is required').default('localhost'),
   DB_PORT: z.coerce.number().default(6543),
-  DB_NAME: z.string().default('postgres'),
-  DB_USER: z.string().optional(),
-  DB_PASSWORD: z.string().optional(),
+  DB_NAME: z.string().min(1).default('postgres'),
+  DB_USER: z.string().min(1, 'DB_USER is required').default('postgres'),
+  DB_PASSWORD: z.string().default(''),
 
+  // Supabase Storage
   SUPABASE_URL: z.string().url().default('https://placeholder.supabase.co'),
   SUPABASE_ANON_KEY: z.string().default('placeholder-anon-key'),
   SUPABASE_SERVICE_ROLE_KEY: z.string().default('placeholder-service-role-key'),
@@ -44,35 +44,24 @@ const envSchema = z.object({
   GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
 });
 
-export type EnvConfig = z.infer<typeof envSchema> & {
-  DATABASE_URL: string;
-};
-
-// Auto-synthesize DATABASE_URL from discrete variables if not explicitly set
-const computedDbUrl =
-  process.env.DATABASE_URL ||
-  (process.env.DB_HOST && process.env.DB_USER
-    ? `postgresql://${encodeURIComponent(process.env.DB_USER)}:${encodeURIComponent(process.env.DB_PASSWORD || '')}@${process.env.DB_HOST}:${process.env.DB_PORT || 6543}/${process.env.DB_NAME || 'postgres'}?sslmode=require`
-    : undefined);
+export type EnvConfig = z.infer<typeof envSchema>;
 
 let parsedEnv: EnvConfig;
 try {
-  const raw = {
-    ...process.env,
-    DATABASE_URL: computedDbUrl || (process.env.NODE_ENV !== 'production' ? 'postgresql://postgres:postgres@localhost:5432/postgres' : undefined),
-  };
-  parsedEnv = envSchema.parse(raw) as EnvConfig;
-  parsedEnv.DATABASE_URL = raw.DATABASE_URL!;
+  parsedEnv = envSchema.parse(process.env);
 } catch (error) {
   if (process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development') {
     // Provide safe defaults during dev/test if .env is not yet configured
     parsedEnv = envSchema.parse({
       ...process.env,
-      DATABASE_URL: computedDbUrl || 'postgresql://postgres:postgres@localhost:5432/postgres',
-    }) as EnvConfig;
-    parsedEnv.DATABASE_URL = computedDbUrl || 'postgresql://postgres:postgres@localhost:5432/postgres';
+      DB_HOST: process.env.DB_HOST || 'localhost',
+      DB_PORT: process.env.DB_PORT || 5432,
+      DB_NAME: process.env.DB_NAME || 'postgres',
+      DB_USER: process.env.DB_USER || 'postgres',
+      DB_PASSWORD: process.env.DB_PASSWORD || 'postgres',
+    });
   } else {
-    console.error('❌ Environment configuration error (Specify either DATABASE_URL or DB_HOST, DB_USER, DB_PASSWORD):', error);
+    console.error('❌ Environment configuration error (Please define DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD):', error);
     throw error;
   }
 }
