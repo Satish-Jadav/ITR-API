@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
-  "buildCommand": "NODE_TLS_REJECT_UNAUTHORIZED=0 npm run db:push && tsc --noEmit",
+  "buildCommand": "node scripts/db-push.js && tsc --noEmit",
   "regions": ["bom1"],
   "rewrites": [
     {

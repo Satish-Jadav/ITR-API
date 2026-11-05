@@ -3,6 +3,23 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+const dbUrl =
+  process.env.DATABASE_URL ||
+  process.env.POSTGRES_URL ||
+  process.env.POSTGRES_URL_NON_POOLING ||
+  process.env.POSTGRES_PRISMA_URL;
+
+if (dbUrl) {
+  try {
+    const parsed = new URL(dbUrl);
+    if (!process.env.DB_HOST) process.env.DB_HOST = parsed.hostname;
+    if (!process.env.DB_PORT) process.env.DB_PORT = parsed.port || '5432';
+    if (!process.env.DB_USER) process.env.DB_USER = decodeURIComponent(parsed.username || 'postgres');
+    if (!process.env.DB_PASSWORD) process.env.DB_PASSWORD = decodeURIComponent(parsed.password || '');
+    if (!process.env.DB_NAME) process.env.DB_NAME = parsed.pathname.replace(/^\//, '') || 'postgres';
+  } catch {}
+}
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().default(3000),
