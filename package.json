@@ -1,0 +1,37 @@
+{
+  "name": "zerotax-api",
+  "version": "2026.1.0",
+  "description": "ZeroTax Production Node.js + Vercel Serverless API with Supabase & VAPT Hardening",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "tsx watch src/devServer.ts",
+    "build": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "generate-keys": "tsx scripts/generate-keys.ts",
+    "test": "tsx scripts/test-api.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.7",
+    "@hono/zod-validator": "^0.4.1",
+    "@neondatabase/serverless": "^0.10.1",
+    "@supabase/supabase-js": "^2.46.1",
+    "dotenv": "^16.4.5",
+    "google-auth-library": "^9.14.2",
+    "hono": "^4.6.9",
+    "jose": "^5.9.6",
+    "pg": "^8.13.1",
+    "pino": "^9.5.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/pg": "^8.11.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vercel": "^38.0.0"
+  }
+}
