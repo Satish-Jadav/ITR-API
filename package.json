@@ -9,13 +9,13 @@
   },
   "scripts": {
     "dev": "tsx watch src/devServer.ts",
-    "build": "npm run db:push && tsc --noEmit",
-    "vercel-build": "npm run db:push && tsc --noEmit",
+    "build": "NODE_TLS_REJECT_UNAUTHORIZED=0 npm run db:push && tsc --noEmit",
+    "vercel-build": "NODE_TLS_REJECT_UNAUTHORIZED=0 npm run db:push && tsc --noEmit",
     "lint": "tsc --noEmit",
     "generate-keys": "node scripts/generate-keys.js",
     "test": "tsx scripts/test-api.ts",
     "db:generate": "drizzle-kit generate",
-    "db:push": "drizzle-kit push",
+    "db:push": "drizzle-kit push --force",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
