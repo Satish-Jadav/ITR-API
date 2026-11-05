@@ -9,8 +9,8 @@
   },
   "scripts": {
     "dev": "tsx watch src/devServer.ts",
-    "build": "node scripts/db-push.js && tsc --noEmit",
-    "vercel-build": "node scripts/db-push.js && tsc --noEmit",
+    "build": "node scripts/db-push.js && npx tsc --noEmit",
+    "vercel-build": "node scripts/db-push.js && npx tsc --noEmit",
     "lint": "tsc --noEmit",
     "generate-keys": "node scripts/generate-keys.js",
     "test": "tsx scripts/test-api.ts",
