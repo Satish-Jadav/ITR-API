@@ -11,7 +11,7 @@
     "dev": "tsx watch src/devServer.ts",
     "build": "tsc --noEmit",
     "lint": "tsc --noEmit",
-    "generate-keys": "tsx scripts/generate-keys.ts",
+    "generate-keys": "node scripts/generate-keys.js",
     "test": "tsx scripts/test-api.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
