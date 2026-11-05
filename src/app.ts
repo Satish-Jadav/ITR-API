@@ -21,7 +21,7 @@ export const app = new Hono<AppEnv>();
 app.use('*', edgeVaptFirewall);
 
 // 2. Health Check
-app.get('/health', (c) => {
+const healthHandler = (c: any) => {
   return c.json({
     status: 'ONLINE',
     service: 'ZeroTax-Local Node.js API',
@@ -30,7 +30,10 @@ app.get('/health', (c) => {
     version: '2026.1.0',
     timestamp: new Date().toISOString(),
   });
-});
+};
+
+app.get('/health', healthHandler);
+app.get('/', healthHandler);
 
 // 3. API v1 Domain Routes
 app.route('/api/v1/auth', authRoutes);

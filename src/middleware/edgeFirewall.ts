@@ -26,12 +26,12 @@ export async function edgeVaptFirewall(c: Context, next: Next) {
   const path = req.path;
   const isCaShare = path.startsWith('/api/v1/compliance/ca-share/');
   const isStatutory = path.startsWith('/api/v1/statutory/');
-  const isHealth = path.endsWith('/health') || path.endsWith('/portal-health');
+  const isHealth = path.endsWith('/health') || path.endsWith('/portal-health') || path === '/' || path === '';
 
   // 1. API-VAPT-12: Reject Browser Cross-Origin Requests (Native Android APK Only!)
-  // Allow official CA portal origin for /compliance/ca-share/:token
+  // Allow official CA portal origin for /compliance/ca-share/:token, and allow health checks
   const origin = req.header('origin');
-  if (origin || req.header('sec-fetch-site')) {
+  if (!isHealth && (origin || req.header('sec-fetch-site'))) {
     const isAllowedCaOrigin = isCaShare && (origin === 'https://app.zerotax.in' || (process.env.NODE_ENV !== 'production' && origin?.includes('localhost')));
     if (!isAllowedCaOrigin) {
       return c.json(

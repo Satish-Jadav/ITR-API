@@ -1,4 +1,4 @@
-import { handle } from 'hono/vercel';
+import { handle } from '@hono/node-server/vercel';
 import { app } from '../src/app.js';
 
 export const config = {
@@ -7,3 +7,4 @@ export const config = {
 };
 
 export default handle(app);
+
