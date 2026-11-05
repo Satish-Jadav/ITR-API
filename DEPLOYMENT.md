@@ -21,13 +21,16 @@ This guide provides end-to-end instructions for deploying the **ZeroTax-Local No
    - **Database Password:** Generate a strong 32+ character password.
    - **Region:** Select **`ap-south-1` (Mumbai, India)** (Mandatory for RBI & DPDP Act compliance).
    - **Pricing Plan:** Pro / Team (recommended for production RLS and daily automated backups).
-3. Once the database provisions, navigate to **Project Settings** $\rightarrow$ **Database**:
-   - Copy the **Connection String (Transaction Pooler - port 6543)**.
-   - Example: `postgresql://postgres.[PROJECT_REF]:[PASSWORD]@aws-0-ap-south-1.pooler.supabase.com:6543/postgres?sslmode=require`
-4. Navigate to **Project Settings** $\rightarrow$ **API**:
-   - Copy **Project URL** (`https://[PROJECT_REF].supabase.co`)
-   - Copy **anon public key**
-   - Copy **service_role secret key** (Keep secret; only add to Vercel environment variables).
+3. Once the database provisions, find your **Connection String (Transaction Pooler - port 6543)**:
+   - **Fastest Way (New UI):** In the top header bar of your project dashboard, click the **Connect** button $\rightarrow$ Select **Transaction Pooler** (or Connection String $\rightarrow$ URI) $\rightarrow$ Port `6543`.
+   - **Alternative (Sidebar):** Click the **Settings** gear icon (⚙ at the bottom of the left sidebar) $\rightarrow$ Click **Database** (under Configuration) $\rightarrow$ Scroll down to **Connection String** / **Connection Pooling** $\rightarrow$ Select **Transaction Pooler**.
+   - Example format: `postgresql://postgres.[PROJECT_REF]:[PASSWORD]@aws-0-ap-south-1.pooler.supabase.com:6543/postgres?sslmode=require`
+
+4. Find your **Project URL & API Keys**:
+   - In the left sidebar, click **Settings** (⚙ gear icon) $\rightarrow$ Click **API** (or **API Keys** / **Data API**).
+   - Copy **Project URL** (`https://[PROJECT_REF].supabase.co`).
+   - Copy **anon public key** (`sb_publishable_...` or JWT).
+   - Copy **service_role secret key** (Click "Reveal" to copy; keep this secret, only add to Vercel/server environment variables).
 
 ---
 
