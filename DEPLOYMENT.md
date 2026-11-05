@@ -39,13 +39,24 @@ This guide provides end-to-end instructions for deploying the **ZeroTax-Local No
 
 ---
 
-## 3. Step 2: Run Database Migrations & Seed Data
+## 3. Step 2: Push Database Schema (via Drizzle ORM or SQL Editor)
 
+### Option A: Direct Push via Drizzle ORM (Recommended - 100% Direct Postgres)
+Because the API uses **Drizzle ORM** directly over PostgreSQL (port 6543 / 5432), you do not need Supabase Data APIs or PostgREST. Simply run:
+
+```bash
+npm run db:push
+```
+This automatically connects to your PostgreSQL database and provisions all 14 tables, indexes, and relations.
+
+You can also launch Drizzle Studio to browse your tables locally:
+```bash
+npm run db:studio
+```
+
+### Option B: Via Supabase SQL Editor
 1. In the Supabase Dashboard, click on **SQL Editor** in the left sidebar.
 2. Click **New query**, paste the entire contents of [`supabase/migrations/20261105000000_zerotax_init.sql`](file:///d:/projects/ITR-API/supabase/migrations/20261105000000_zerotax_init.sql), and click **Run**.
-   - This creates all 11 tables, indexes, Row Level Security (RLS) policies, and creates the two storage buckets:
-     - `ztvault-backups` (Max 10 MB per file, private)
-     - `ca-dossiers` (Max 10 MB per file, private)
 3. Open another **New query**, paste the contents of [`supabase/seed/statutory_ay2026_27.sql`](file:///d:/projects/ITR-API/supabase/seed/statutory_ay2026_27.sql), and click **Run**.
    - This seeds the AY 2026-27 OTA rules bundle (CII 376, Section 87A rebate, standard deduction ₹75,000), SBI TTBR rates, Jan 31 2018 grandfathered equity FMVs, and RBI IFSC codes.
 
