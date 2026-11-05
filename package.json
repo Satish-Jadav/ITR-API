@@ -9,7 +9,8 @@
   },
   "scripts": {
     "dev": "tsx watch src/devServer.ts",
-    "build": "tsc --noEmit",
+    "build": "npm run db:push && tsc --noEmit",
+    "vercel-build": "npm run db:push && tsc --noEmit",
     "lint": "tsc --noEmit",
     "generate-keys": "node scripts/generate-keys.js",
     "test": "tsx scripts/test-api.ts",
