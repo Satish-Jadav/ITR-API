@@ -7,7 +7,6 @@ import {
 } from '../security/vaptGuards.js';
 import { scrubVerhoeffAndPan } from '../security/verhoeffScrubber.js';
 import { authGuard } from '../middleware/authGuard.js';
-import { env } from '../config/env.js';
 
 export const aiRoutes = new Hono();
 
@@ -69,7 +68,7 @@ aiRoutes.post('/copilot-intent', zValidator('json', SanitizedAiCopilotRequestSch
  */
 aiRoutes.post('/form16-extract', zValidator('json', AiForm16ExtractSchema), async (c) => {
   const body = c.req.valid('json');
-  const { scrubbedText } = scrubVerhoeffAndPan(body.sanitizedRawText);
+  scrubVerhoeffAndPan(body.sanitizedRawText);
 
   // Parse extracted Form 16 components
   return c.json({

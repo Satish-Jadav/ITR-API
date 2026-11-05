@@ -20,3 +20,4 @@ echo [ERROR] node.exe was not found. Please install Node.js or add it to PATH.
 :done
 echo.
 pause
+

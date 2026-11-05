@@ -8,7 +8,14 @@ import { aiRoutes } from './routes/ai.js';
 import { chatRoutes } from './routes/chat.js';
 import { complianceRoutes } from './routes/compliance.js';
 
-export const app = new Hono();
+export type AppEnv = {
+  Variables: {
+    requestId: string;
+    user?: any;
+  };
+};
+
+export const app = new Hono<AppEnv>();
 
 // 1. Edge Security & VAPT Firewall Middleware
 app.use('*', edgeVaptFirewall);
@@ -36,7 +43,7 @@ app.route('/api/v1/compliance', complianceRoutes);
 
 // 4. API-VAPT-11: Global Error Handler (Zero PII or Stack Trace Leakage)
 app.onError((err, c) => {
-  const requestId = c.get('requestId') || 'unknown';
+  const requestId = (c.get('requestId') as string) || 'unknown';
   console.error(`[ERROR] RequestId: ${requestId} - ${err.message}`);
 
   return c.json(
@@ -51,11 +58,12 @@ app.onError((err, c) => {
 
 // 5. 404 Handler
 app.notFound((c) => {
+  const requestId = (c.get('requestId') as string) || 'unknown';
   return c.json(
     {
       errorCode: 'ROUTE_NOT_FOUND',
       path: c.req.path,
-      requestId: c.get('requestId') || 'unknown',
+      requestId,
     },
     404
   );

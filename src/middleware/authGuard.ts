@@ -10,7 +10,7 @@ export async function authGuard(c: Context, next: Next) {
   try {
     const verified = await verifyDpopBoundAccessToken(authHeader, dpopHeader, method, fullUrl);
     c.set('user', verified);
-    await next();
+    return await next();
   } catch (error: any) {
     return c.json(
       {

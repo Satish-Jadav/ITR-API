@@ -9,7 +9,7 @@ import {
   RefreshTokenRequestSchema,
   DpdpShredRequestSchema,
 } from '../security/vaptGuards.js';
-import { signDpopBoundAccessToken, verifyDpopBoundAccessToken } from '../security/dpopVerifier.js';
+import { signDpopBoundAccessToken } from '../security/dpopVerifier.js';
 import { verifyPlayIntegrityToken } from '../security/playIntegrity.js';
 import { queryDb, getSupabase } from '../config/supabase.js';
 import { env } from '../config/env.js';
@@ -67,7 +67,7 @@ authRoutes.post('/oauth/challenge', zValidator('json', PkceChallengeRequestSchem
  */
 authRoutes.post('/oauth/google-pkce', zValidator('json', GooglePkceExchangeRequestSchema), async (c) => {
   const body = c.req.valid('json');
-  const requestId = c.get('requestId') || crypto.randomUUID();
+  const requestId = (c.get as any)('requestId') || crypto.randomUUID();
 
   // 1. Atomically consume challenge from Postgres (One-time use & distributed across serverless lambdas)
   const challengeRows = await queryDb(
@@ -207,7 +207,7 @@ authRoutes.post('/oauth/google-pkce', zValidator('json', GooglePkceExchangeReque
  */
 authRoutes.post('/token/refresh', zValidator('json', RefreshTokenRequestSchema), async (c) => {
   const body = c.req.valid('json');
-  const requestId = c.get('requestId') || crypto.randomUUID();
+  const requestId = (c.get as any)('requestId') || crypto.randomUUID();
 
   const tokenHash = crypto.createHash('sha256').update(body.refreshToken).digest('hex');
 

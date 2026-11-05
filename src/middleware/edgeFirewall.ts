@@ -96,5 +96,5 @@ export async function edgeVaptFirewall(c: Context, next: Next) {
     }
   }
 
-  await next();
+  return await next();
 }

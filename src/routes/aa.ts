@@ -109,7 +109,7 @@ aaRoutes.post('/fi/request', zValidator('json', AaFiRequestSchema), async (c) =>
  * CRITICAL ZERO-KNOWLEDGE RULE: Vercel server returns FIP ciphertext untouched.
  */
 aaRoutes.get('/fi/fetch/:sessionId', async (c) => {
-  const user = getCurrentUser(c);
+  getCurrentUser(c);
   const sessionId = c.req.param('sessionId');
 
   // Simulated encrypted FIP response matching ReBIT payload format
