@@ -7,3 +7,4 @@ export const db = drizzle(dbPool, { schema });
 
 // Export schema directly for easy consumption
 export * from './schema.js';
+

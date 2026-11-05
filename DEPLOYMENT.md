@@ -80,15 +80,34 @@ This generates:
 
 ## 5. Step 4: Configure Google Cloud & Play Integrity
 
-1. **Google Cloud Console:**
-   - Create a project or use your existing ZeroTax Play Console linked project.
-   - Enable **Google Play Integrity API**.
-   - Create a **Service Account** with the **Play Integrity Viewer** role.
-   - Generate a JSON private key and minify it into a single line string for `GOOGLE_PLAY_INTEGRITY_SERVICE_ACCOUNT_JSON`.
-2. **Google OAuth 2.0 Web Client ID:**
-   - Under **APIs & Services** $\rightarrow$ **Credentials**, create an OAuth 2.0 Client ID (type: Web Application).
-   - Set the Client ID to `GOOGLE_OAUTH_CLIENT_ID`.
-   - The Android app's `CredentialManager` will use this Web Client ID as the server audience.
+### 1. Google Cloud Console:
+1. Go to [Google Cloud Console](https://console.cloud.google.com).
+2. Create a project (or select the project linked to your Google Play Console).
+3. Navigate to **APIs & Services** $\rightarrow$ **Library**:
+   - Search for **Google Play Integrity API** and click **Enable**.
+4. Navigate to **IAM & Admin** $\rightarrow$ **Service Accounts**:
+   - Click **Create Service Account**.
+   - Name: `play-integrity-decoder`
+   - Role: Select **Service Usage Consumer** (or **Viewer**, or leave role empty — Google Play Console links the permissions).
+   - Click **Done**.
+5. Generate the Service Account JSON Key:
+   - Click on the created service account $\rightarrow$ Go to the **Keys** tab.
+   - Click **Add Key** $\rightarrow$ **Create new key** $\rightarrow$ Select **JSON** $\rightarrow$ Click **Create**.
+   - A `.json` file will download to your computer.
+   - Minify the contents of this JSON file into a single line string for `GOOGLE_PLAY_INTEGRITY_SERVICE_ACCOUNT_JSON` in `.env`.
+
+### 2. Link in Google Play Console (Crucial Step):
+Google Play manages Play Integrity authorization:
+1. Go to [Google Play Console](https://play.google.com/console) $\rightarrow$ Select your app (`in.zerotax.app`).
+2. In the left menu under **Release**, click **App integrity**.
+3. Under the **Play Integrity API** section:
+   - Click **Settings** (or **Link project**).
+   - Select the Google Cloud project you created in Step 1.
+   *(This link is what grants your service account permission to call `decodeIntegrityToken`).*
+
+> [!TIP]
+> **For Local Testing / Emulators:**
+> You can bypass Play Integrity during local development by setting `ALLOW_PLAY_INTEGRITY_DEV_BYPASS=true` in your [`.env`](file:///d:/projects/ITR-API/.env). The API will accept `dev_bypass_...` tokens from local emulators without needing Google Cloud credentials.
 
 ---
 

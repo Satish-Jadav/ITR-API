@@ -27,3 +27,4 @@ console.log(`ZEROTAX_PAN_BLIND_INDEX_PEPPER=${blindIndexPepper}\n`);
 console.log('================================================================');
 console.log('✅ Keys generated successfully! Keep private keys secure.');
 console.log('================================================================');
+

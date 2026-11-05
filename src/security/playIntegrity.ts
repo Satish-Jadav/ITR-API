@@ -1,4 +1,4 @@
-import { OAuth2Client } from 'google-auth-library';
+import { GoogleAuth } from 'google-auth-library';
 import { env } from '../config/env.js';
 
 export interface PlayIntegrityVerdict {
@@ -33,14 +33,16 @@ export async function verifyPlayIntegrityToken(
     }
 
     const saCredentials = JSON.parse(env.GOOGLE_PLAY_INTEGRITY_SERVICE_ACCOUNT_JSON);
-    const auth = new OAuth2Client({
+    const auth = new GoogleAuth({
       credentials: {
         client_email: saCredentials.client_email,
         private_key: saCredentials.private_key,
       },
+      scopes: ['https://www.googleapis.com/auth/playintegrity'],
     });
 
-    const res = await auth.request<{
+    const client = await auth.getClient();
+    const res = await client.request<{
       tokenPayloadExternal?: {
         requestDetails?: { nonce?: string; requestPackageName?: string };
         appIntegrity?: { appRecognitionVerdict?: string; certificateSha256Digest?: string[] };
