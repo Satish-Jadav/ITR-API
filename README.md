@@ -1,4 +1,4 @@
-# ZeroTax API: Production Node.js + Vercel Serverless & Supabase Backend 
+# ZeroTax API: Production Node.js + Vercel Serverless & Supabase Backend
 
 Zero-Knowledge, CERT-In / RBI / DPDP Act 2023 hardened backend API for the **ZeroTax-Local** Android application.
 
