@@ -13,10 +13,23 @@ import { signDpopBoundAccessToken } from '../security/dpopVerifier.js';
 import { verifyPlayIntegrityToken } from '../security/playIntegrity.js';
 import { queryDb, getSupabase } from '../config/supabase.js';
 import { env } from '../config/env.js';
+import { logger } from '../config/logger.js';
 import { authGuard, getCurrentUser } from '../middleware/authGuard.js';
 import { logSecurityAuditEvent } from '../services/auditService.js';
 
 export const authRoutes = new Hono();
+
+// In-memory fallback map for dev & automated test runs when Postgres is offline
+const devInMemoryChallenges = new Map<
+  string,
+  {
+    code_challenge: string;
+    dpop_public_key_jwk: any;
+    device_installation_id: string;
+    play_integrity_nonce: string;
+    expires_at: number;
+  }
+>();
 
 // Helper to encrypt email using AES-256-GCM with scrypt KDF and per-row random salt (API-VAPT-01)
 function encryptEmailAesGcm(email: string, pepperHex: string): Buffer {
@@ -40,20 +53,38 @@ authRoutes.post('/oauth/challenge', zValidator('json', PkceChallengeRequestSchem
   const playIntegrityNonce = crypto.randomBytes(32).toString('base64url');
   const expiresAt = new Date(Date.now() + 300_000); // 5 minutes TTL
 
-  await queryDb(
-    `INSERT INTO auth_pkce_challenges (
-       auth_session_id, code_challenge, dpop_public_key_jwk, device_installation_id,
-       play_integrity_nonce, expires_at
-     ) VALUES ($1::uuid, $2, $3::jsonb, $4, $5, $6)`,
-    [
-      authSessionId,
-      body.codeChallenge,
-      JSON.stringify(body.dpopPublicKeyJwk),
-      body.deviceInstallationId,
-      playIntegrityNonce,
-      expiresAt,
-    ]
-  );
+  try {
+    await queryDb(
+      `INSERT INTO auth_pkce_challenges (
+         auth_session_id, code_challenge, dpop_public_key_jwk, device_installation_id,
+         play_integrity_nonce, expires_at
+       ) VALUES ($1::uuid, $2, $3::jsonb, $4, $5, $6)`,
+      [
+        authSessionId,
+        body.codeChallenge,
+        JSON.stringify(body.dpopPublicKeyJwk),
+        body.deviceInstallationId,
+        playIntegrityNonce,
+        expiresAt,
+      ]
+    );
+  } catch (err: any) {
+    if (env.NODE_ENV !== 'production') {
+      logger.warn('⚠️ auth_pkce_challenges DB insert failed, using dev in-memory fallback:', {
+        error: err.message,
+        authSessionId,
+      });
+      devInMemoryChallenges.set(authSessionId, {
+        code_challenge: body.codeChallenge,
+        dpop_public_key_jwk: body.dpopPublicKeyJwk,
+        device_installation_id: body.deviceInstallationId,
+        play_integrity_nonce: playIntegrityNonce,
+        expires_at: expiresAt.getTime(),
+      });
+    } else {
+      throw err;
+    }
+  }
 
   return c.json({
     authSessionId,
@@ -70,12 +101,25 @@ authRoutes.post('/oauth/google-pkce', zValidator('json', GooglePkceExchangeReque
   const requestId = (c.get as any)('requestId') || crypto.randomUUID();
 
   // 1. Atomically consume challenge from Postgres (One-time use & distributed across serverless lambdas)
-  const challengeRows = await queryDb(
-    `DELETE FROM auth_pkce_challenges
-     WHERE auth_session_id = $1::uuid AND expires_at > NOW()
-     RETURNING code_challenge, dpop_public_key_jwk, device_installation_id, play_integrity_nonce`,
-    [body.authSessionId]
-  );
+  let challengeRows: any[] = [];
+  try {
+    challengeRows = await queryDb(
+      `DELETE FROM auth_pkce_challenges
+       WHERE auth_session_id = $1::uuid AND expires_at > NOW()
+       RETURNING code_challenge, dpop_public_key_jwk, device_installation_id, play_integrity_nonce`,
+      [body.authSessionId]
+    );
+  } catch (err: any) {
+    if (env.NODE_ENV !== 'production' && devInMemoryChallenges.has(body.authSessionId)) {
+      const cached = devInMemoryChallenges.get(body.authSessionId)!;
+      devInMemoryChallenges.delete(body.authSessionId);
+      if (Date.now() < cached.expires_at) {
+        challengeRows = [cached];
+      }
+    } else {
+      throw err;
+    }
+  }
 
   if (challengeRows.length === 0) {
     return c.json({ errorCode: 'AUTH_SESSION_EXPIRED_OR_NOT_FOUND', requestId }, 400);

@@ -1,17 +1,27 @@
 import { queryDb } from '../config/supabase.js';
+import { logger } from '../config/logger.js';
 
 export class StatutoryService {
   /**
    * Returns statutory manifest with AY 2026-27 latest bundle version and Ed25519 signature
    */
   static async getManifest(assessmentYear: string = '2026-27', currentVersion?: string) {
-    const rows = await queryDb(
-      `SELECT bundle_version, assessment_year, schema_ver, payload_json, payload_sha256_hex, ed25519_signature_hex
-       FROM statutory_ota_rule_bundles
-       WHERE assessment_year = $1 AND is_active = TRUE
-       ORDER BY published_at DESC LIMIT 1`,
-      [assessmentYear]
-    );
+    let rows: any[] = [];
+    try {
+      rows = await queryDb(
+        `SELECT bundle_version, assessment_year, schema_ver, payload_json, payload_sha256_hex, ed25519_signature_hex
+         FROM statutory_ota_rule_bundles
+         WHERE assessment_year = $1 AND is_active = TRUE
+         ORDER BY published_at DESC LIMIT 1`,
+        [assessmentYear]
+      );
+    } catch (err: any) {
+      logger.warn('⚠️ Statutory manifest DB query failed, falling back to bundled statutory defaults', {
+        assessmentYear,
+        error: err.message,
+      });
+      rows = [];
+    }
 
     if (rows.length === 0) {
       // Return hardcoded default if table not yet seeded

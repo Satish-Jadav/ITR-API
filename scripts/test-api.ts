@@ -111,6 +111,15 @@ async function runTests() {
   const portalJson = (await portalRes.json()) as any;
   assert(portalJson.eportalStatus === 'HEALTHY', 'Portal status is HEALTHY');
 
+  // Test 8: Database Diagnostic Health Check
+  const dbHealthRes = await app.request('/health/db');
+  const dbHealthJson = (await dbHealthRes.json()) as any;
+  assert(dbHealthJson.status === 'HEALTHY' || dbHealthJson.status === 'UNHEALTHY', 'GET /health/db returns structured diagnostic health payload');
+  assert(!!dbHealthJson.host && !!dbHealthJson.port, 'GET /health/db includes target host and port');
+  if (dbHealthJson.status === 'UNHEALTHY') {
+    assert(!!dbHealthJson.error, 'Unhealthy DB status includes error root-cause details');
+  }
+
   console.log(`\n================================================================`);
   console.log(`Test Results: ${passed} Passed, ${failed} Failed`);
   console.log(`================================================================`);
