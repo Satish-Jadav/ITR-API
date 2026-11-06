@@ -3,6 +3,13 @@
   "version": 2,
   "buildCommand": "node scripts/db-push.js && npx tsc --noEmit",
   "regions": ["bom1"],
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/health",
+      "permanent": false
+    }
+  ],
   "rewrites": [
     {
       "source": "/((?!public/).*)",
