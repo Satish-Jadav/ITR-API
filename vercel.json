@@ -5,11 +5,7 @@
   "regions": ["bom1"],
   "rewrites": [
     {
-      "source": "/health",
-      "destination": "/api/index.ts"
-    },
-    {
-      "source": "/api/(.*)",
+      "source": "/((?!public/).*)",
       "destination": "/api/index.ts"
     }
   ],
