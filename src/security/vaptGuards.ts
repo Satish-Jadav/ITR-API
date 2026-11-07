@@ -194,5 +194,132 @@ export const PortalSyncRequestSchema = z
     txnId: z.string().uuid(),
     verificationToken: z.string().min(32),
     assessmentYear: z.string().regex(AY_REGEX).default('2026-27'),
+    encryptedSnapshotPayloadBase64: z.string().max(5_242_880).optional(),
+    transactions: z.array(z.any()).optional(),
+    aggregateGrossAmount: z.number().int().optional(),
+    aggregateTdsCredit: z.number().int().optional(),
+    sourceOrigin: z.enum(['ITD_DIRECT_PORTAL', 'ERI_GATEWAY', 'CLIENT_ENCRYPTED_BRIDGE', 'AA_AGGREGATOR']).default('ITD_DIRECT_PORTAL').optional(),
+  })
+  .strict();
+
+// 8. 25-Schema AI Statutory Document Scanners
+export const UniversalScanSchema = z
+  .object({
+    documentType: z.enum([
+      'FORM_16_PART_A',
+      'FORM_16_PART_B',
+      'FORM_26AS',
+      'AIS_TIS',
+      'RENT_RECEIPT',
+      'HEALTH_INSURANCE_80D',
+      'EDUCATION_LOAN_80E',
+      'HOME_LOAN_24B',
+    ]),
+    sanitizedRawText: z
+      .string()
+      .min(5)
+      .max(100000)
+      .refine((val) => !SQLI_CONTROL_REGEX.test(val), 'Blocked SQL/Control sequence'),
+    assessmentYear: z.string().regex(AY_REGEX).default('2026-27'),
+  })
+  .strict();
+
+export const WealthAndBusinessScanSchema = z
+  .object({
+    documentType: z.enum([
+      'CAMS_CAS_CAPITAL_GAINS',
+      'BROKER_PNL_EQUITY',
+      'BROKER_PNL_FNO',
+      'CRYPTO_VDA_194S',
+      'PROFESSIONAL_44ADA_INVOICE',
+      'GSTR_3B_SUMMARY',
+      'BANK_STATEMENT_AA',
+    ]),
+    sanitizedRawText: z
+      .string()
+      .min(5)
+      .max(100000)
+      .refine((val) => !SQLI_CONTROL_REGEX.test(val), 'Blocked SQL/Control sequence'),
+    assessmentYear: z.string().regex(AY_REGEX).default('2026-27'),
+  })
+  .strict();
+
+export const LifecycleAndNriScanSchema = z
+  .object({
+    documentType: z.enum([
+      'FORM_67_FOREIGN_TAX_CREDIT',
+      'FORM_10E_SALARY_ARREARS',
+      'INTIMATION_143_1',
+      'DEFECTIVE_NOTICE_139_9',
+      'REFUND_ADJUSTMENT_245',
+      'CHALLAN_280_RECEIPT',
+    ]),
+    sanitizedRawText: z
+      .string()
+      .min(5)
+      .max(100000)
+      .refine((val) => !SQLI_CONTROL_REGEX.test(val), 'Blocked SQL/Control sequence'),
+    assessmentYear: z.string().regex(AY_REGEX).default('2026-27'),
+  })
+  .strict();
+
+// 9. Conversational Chat Streaming & Post-Sync Briefing Schemas
+export const ChatStreamRequestSchema = z
+  .object({
+    query: z
+      .string()
+      .min(1)
+      .max(2000)
+      .refine((val) => !SQLI_CONTROL_REGEX.test(val), 'Blocked SQL/Control sequence'),
+    sessionId: z.string().uuid().optional(),
+    locale: z.enum(['en-IN', 'hi-IN', 'gu-IN', 'mr-IN', 'ta-IN', 'te-IN']).default('en-IN'),
+    taxpayerSnapshot: z
+      .object({
+        isSynced: z.boolean(),
+        itrForm: z.string().optional(),
+        activeRegime: z.enum(['NEW', 'OLD']).optional(),
+        grossTotalIncome: z.number().optional(),
+        totalDeductionsClaimed: z.number().optional(),
+        netTaxableIncome: z.number().optional(),
+        computedTaxPayable: z.number().optional(),
+        computedRefundDue: z.number().optional(),
+        aisRecordCount: z.number().optional(),
+        discrepancyCount: z.number().optional(),
+      })
+      .optional(),
+  })
+  .strict();
+
+export const PostSyncBriefingRequestSchema = z
+  .object({
+    pan: z.string().regex(PAN_REGEX),
+    assessmentYear: z.string().regex(AY_REGEX).default('2026-27'),
+    syncSummary: z.object({
+      salaryGross: z.number().default(0),
+      otherIncomeGross: z.number().default(0),
+      tdsCreditTotal: z.number().default(0),
+      advanceTaxPaid: z.number().default(0),
+      regimeNewTax: z.number().default(0),
+      regimeOldTax: z.number().default(0),
+      recommendedRegime: z.enum(['NEW', 'OLD']).default('NEW'),
+      recommendedForm: z.string().default('ITR-1'),
+      refundAmount: z.number().default(0),
+      taxPayable: z.number().default(0),
+      bankAccountMasked: z.string().default('••••••••4821'),
+    }),
+  })
+  .strict();
+
+// 10. Filing Speed & Telemetry SLA Schemas
+export const FilingSpeedTelemetrySchema = z
+  .object({
+    anonymizedFilingId: z.string().min(8).max(64),
+    itrType: z.enum(['ITR-1', 'ITR-2', 'ITR-3', 'ITR-4']),
+    assessmentYear: z.string().regex(AY_REGEX).default('2026-27'),
+    startTimestamp: z.string().datetime(),
+    submissionTimestamp: z.string().datetime(),
+    everifyTimestamp: z.string().datetime(),
+    totalDurationSeconds: z.number().min(0).max(86400),
+    clientPlatform: z.string().max(32).default('ANDROID'),
   })
   .strict();
