@@ -23,6 +23,15 @@ vaultRoutes.put('/sync', zValidator('json', VaultSyncPutSchema), async (c) => {
       syncedAtIso: result.created_at,
     });
   } catch (error: any) {
+    if (error.message === 'DUPLICATE_AES_GCM_IV_REJECTED_400') {
+      return c.json(
+        {
+          errorCode: 'DUPLICATE_AES_GCM_IV',
+          message: 'AES-GCM IV has already been used. Nonce reuse is strictly prohibited.',
+        },
+        400
+      );
+    }
     if (error.message === 'VAULT_VERSION_CONFLICT_409') {
       return c.json(
         {
