@@ -132,6 +132,15 @@ complianceRoutes.get('/ca-share/:token', async (c) => {
     }
   }
 
+  if (!payloadBase64) {
+    // Storage download failed; roll back view counter so one-time link is not burned
+    await queryDb(
+      'UPDATE ca_shared_review_links SET current_views = GREATEST(0, current_views - 1) WHERE share_id = $1::uuid',
+      [link.share_id]
+    );
+    return c.json({ errorCode: 'DOSSIER_STORAGE_TEMPORARILY_UNAVAILABLE' }, 503);
+  }
+
   return c.json({
     encryptedDossierBlobBase64: payloadBase64,
     aesGcmIvHex: link.aes_gcm_iv_hex,

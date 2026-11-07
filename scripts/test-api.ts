@@ -1,4 +1,5 @@
 import { app } from '../src/app.js';
+import { scrubVerhoeffAndPan } from '../src/security/verhoeffScrubber.js';
 
 console.log('🧪 Running ZeroTax VAPT Security & Route Verification Tests...\n');
 
@@ -155,6 +156,15 @@ async function runTests() {
   assert(badVerifyRes.status === 400, 'POST /api/v1/portal/otp/verify rejects invalid OTP with 400');
   const badVerifyJson = (await badVerifyRes.json()) as any;
   assert(badVerifyJson.errorCode === 'INVALID_OTP', 'Error code is INVALID_OTP');
+  // Test 11: PII Scrubber case-insensitivity & boundary resilience
+  const pii1 = scrubVerhoeffAndPan('My PAN is abcde1234f and Aadhaar is 1234 5678 9012');
+  assert(pii1.scrubbedText.includes('[PAN_REDACTED]'), 'Scrubber catches lowercase PAN');
+  assert(pii1.scrubbedText.includes('[AADHAAR_REDACTED]'), 'Scrubber catches 12-digit spaced Aadhaar');
+
+  const pii2 = scrubVerhoeffAndPan('PAN: ABCDE1234F, Aadhaar: 9999-8888-7777');
+  assert(pii2.scrubbedText.includes('[PAN_REDACTED]'), 'Scrubber catches uppercase PAN with punctuation');
+  assert(pii2.scrubbedText.includes('[AADHAAR_REDACTED]'), 'Scrubber catches hyphenated Aadhaar');
+
 
   console.log(`\n================================================================`);
   console.log(`Test Results: ${passed} Passed, ${failed} Failed`);
