@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { queryDb, getSupabase } from '../config/supabase.js';
 import { env } from '../config/env.js';
 import { z } from 'zod';
@@ -133,7 +134,13 @@ export class VaultService {
 
         if (data && !error) {
           const arrayBuffer = await data.arrayBuffer();
-          payloadBase64 = Buffer.from(arrayBuffer).toString('base64');
+          const downloadedBytes = Buffer.from(arrayBuffer);
+          const computedSha256 = crypto.createHash('sha256').update(downloadedBytes).digest('hex');
+          if (record.ciphertext_sha256_hex && computedSha256 !== record.ciphertext_sha256_hex) {
+            console.error('[VAULT CORRUPTION] SHA-256 mismatch detected for ' + record.storage_path);
+            throw new Error('VAULT_CORRUPTED_OR_TAMPERED');
+          }
+          payloadBase64 = downloadedBytes.toString('base64');
         }
       } catch (err: any) {
         console.warn('Falling back to inline payload:', err.message);

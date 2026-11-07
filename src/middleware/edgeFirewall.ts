@@ -3,14 +3,21 @@ import { Context, Next } from 'hono';
 // In-memory sliding window cache for request ID anti-replay (TTL: 60 seconds)
 const seenRequestIds = new Map<string, number>();
 
-function isRequestIdReplayed(requestId: string): boolean {
+// Periodic unref cleanup runs every 30s instead of blocking the event loop on every single request
+const cleanupReplayInterval = setInterval(() => {
   const now = Date.now();
   for (const [id, ts] of seenRequestIds.entries()) {
     if (now - ts > 60_000) {
       seenRequestIds.delete(id);
     }
   }
-  if (seenRequestIds.has(requestId)) {
+}, 30_000);
+cleanupReplayInterval.unref();
+
+function isRequestIdReplayed(requestId: string): boolean {
+  const now = Date.now();
+  const existingTs = seenRequestIds.get(requestId);
+  if (existingTs !== undefined && now - existingTs <= 60_000) {
     return true;
   }
   seenRequestIds.set(requestId, now);

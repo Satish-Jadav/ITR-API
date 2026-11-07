@@ -35,20 +35,20 @@ export function validateVerhoeff(numStr: string): boolean {
 export function scrubVerhoeffAndPan(text: string): { scrubbedText: string; redactedCount: number } {
   let count = 0;
 
-  // 1. Scrub PAN: 5 letters, 4 digits, 1 letter (e.g. ABCDE1234F)
-  let scrubbed = text.replace(/\b[A-Z]{5}[0-9]{4}[A-Z]\b/g, () => {
+  // 1. Scrub PAN: 5 letters, 4 digits, 1 letter (case-insensitive + boundary safe e.g. ABCDE1234F / abcde1234f)
+  let scrubbed = text.replace(/(^|[^A-Za-z0-9])([A-Za-z]{5}[0-9]{4}[A-Za-z])(?=[^A-Za-z0-9]|$)/g, (_match, prefix) => {
     count++;
-    return '[PAN_REDACTED]';
+    return prefix + '[PAN_REDACTED]';
   });
 
-  // 2. Scrub 12-digit Aadhaar & 16-digit VID if Verhoeff passes
-  scrubbed = scrubbed.replace(/\b(\d{4}[\s-]?\d{4}[\s-]?\d{4}|\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4})\b/g, (match) => {
-    const raw = match.replace(/[\s-]/g, '');
-    if ((raw.length === 12 || raw.length === 16) && validateVerhoeff(raw)) {
+  // 2. Scrub 12-digit Aadhaar & 16-digit VID (fail-safe for financial transcripts even if OCR checksum has single digit typo)
+  scrubbed = scrubbed.replace(/(^|[^0-9])(\d{4}[\s-]?\d{4}[\s-]?\d{4}|\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4})(?=[^0-9]|$)/g, (_match, prefix, digitsGroup) => {
+    const raw = digitsGroup.replace(/[\s-]/g, '');
+    if (raw.length === 12 || raw.length === 16) {
       count++;
-      return raw.length === 12 ? '[AADHAAR_REDACTED]' : '[VID_REDACTED]';
+      return prefix + (raw.length === 12 ? '[AADHAAR_REDACTED]' : '[VID_REDACTED]');
     }
-    return match;
+    return prefix + digitsGroup;
   });
 
   return { scrubbedText: scrubbed, redactedCount: count };

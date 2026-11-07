@@ -46,9 +46,9 @@ chatRoutes.post('/sync', zValidator('json', ChatSessionSyncSchema), async (c) =>
   // API-VAPT-08: Scrub Aadhaar (Verhoeff checksummed) and PAN numbers from conversational transcript before DB insertion
   const scrubbedMessages = body.messages.map((m) => ({
     ...m,
-    text: scrubVerhoeffAndPan(m.text),
+    text: scrubVerhoeffAndPan(m.text).scrubbedText,
   }));
-  const scrubbedTitle = scrubVerhoeffAndPan(body.chatTitle);
+  const scrubbedTitle = scrubVerhoeffAndPan(body.chatTitle).scrubbedText;
 
   const messagesJson = JSON.stringify(scrubbedMessages);
   const summaryJson = body.summarySnapshot ? JSON.stringify(body.summarySnapshot) : null;
