@@ -44,6 +44,19 @@ export class VaultService {
       throw new Error('STORAGE_SERVICE_UNAVAILABLE_503');
     }
 
+    // Break #5: Reject duplicate GCM IVs across payloads to prevent AES-GCM nonce reuse catastrophe
+    try {
+      const existingIv = await queryDb(
+        `SELECT backup_id FROM encrypted_tax_vault_backups WHERE aes_gcm_iv_hex = $1 LIMIT 1`,
+        [body.aesGcmIvHex]
+      );
+      if (existingIv.length > 0) {
+        throw new Error('DUPLICATE_AES_GCM_IV_REJECTED_400');
+      }
+    } catch (e: any) {
+      if (e.message === 'DUPLICATE_AES_GCM_IV_REJECTED_400') throw e;
+    }
+
     // 2. Upsert cryptographic metadata into PostgreSQL encrypted_tax_vault_backups.
     // Offload payload to Supabase Storage (ciphertext_payload_base64 is NULL) to prevent DB bloat (API-VAPT-07)
     const rows = await queryDb(

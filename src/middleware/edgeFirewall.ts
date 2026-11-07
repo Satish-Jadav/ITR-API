@@ -26,6 +26,8 @@ function isRequestIdReplayed(requestId: string): boolean {
 
 export async function edgeVaptFirewall(c: Context, next: Next) {
   const req = c.req;
+  const clientIp = req.header('x-vercel-forwarded-for')?.split(',')[0].trim() || req.header('x-forwarded-for')?.split(',')[0].trim() || '127.0.0.1';
+  c.set('clientIp', clientIp);
   const requestId = req.header('x-zerotax-request-id') || crypto.randomUUID();
   c.set('requestId', requestId);
   c.header('X-ZeroTax-Request-Id', requestId);

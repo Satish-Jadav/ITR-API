@@ -60,6 +60,7 @@ const envSchema = z.object({
     .transform((v) => v === 'true' || v === '1'),
   GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
   GEMINI_API_KEY: z.string().optional(),
+  CRON_SECRET: z.string().default('zerotax-cron-secret-dev-default'),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;

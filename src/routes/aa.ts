@@ -20,6 +20,12 @@ aaRoutes.post('/webhook/fi-ready', async (c) => {
     return c.json({ errorCode: 'INVALID_JSON_PAYLOAD' }, 400);
   }
 
+  const jwsSignature = c.req.header('x-jws-signature');
+  if (process.env.NODE_ENV === 'production' && !jwsSignature) {
+    logger.warn('[AA WEBHOOK] Missing x-jws-signature in production request');
+    return c.json({ errorCode: 'UNAUTHORIZED_WEBHOOK_SIGNATURE', message: 'Missing x-jws-signature header' }, 401);
+  }
+
   const consentId = body?.consentId || body?.ConsentId;
   const sessionId = body?.sessionId || body?.SessionId;
 

@@ -1,8 +1,28 @@
 import { Hono } from 'hono';
 import { queryDb } from '../config/supabase.js';
 import { logger } from '../config/logger.js';
+import { env } from '../config/env.js';
+import crypto from 'node:crypto';
 
 export const cronRoutes = new Hono();
+
+// Enforce CRON_SECRET Bearer header authentication (API-VAPT Break #17)
+cronRoutes.use('*', async (c, next) => {
+  if (process.env.NODE_ENV === 'test') {
+    return next();
+  }
+  const authHeader = c.req.header('authorization');
+  const expected = `Bearer ${env.CRON_SECRET}`;
+  if (!authHeader) {
+    return c.json({ success: false, error: 'Unauthorized cron request. Missing Authorization header.' }, 401);
+  }
+  const authBuf = Buffer.from(authHeader);
+  const expectedBuf = Buffer.from(expected);
+  if (authBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(authBuf, expectedBuf)) {
+    return c.json({ success: false, error: 'Unauthorized cron request. Invalid CRON_SECRET.' }, 401);
+  }
+  return next();
+});
 
 /**
  * 1. GET|POST /api/v1/cron/portal-probe
