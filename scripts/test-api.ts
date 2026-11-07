@@ -120,6 +120,42 @@ async function runTests() {
     assert(!!dbHealthJson.error, 'Unhealthy DB status includes error root-cause details');
   }
 
+
+  // Test 9: Portal OTP Request
+  const otpReqRes = await app.request('/api/v1/portal/otp/request', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-zerotax-timestamp': String(nowSec),
+    },
+    body: JSON.stringify({
+      pan: 'ABCDE1234F',
+      purpose: 'LOGIN_PORTAL',
+    }),
+  });
+  assert(otpReqRes.status === 200, 'POST /api/v1/portal/otp/request returns 200 OK');
+  const otpReqJson = (await otpReqRes.json()) as any;
+  assert(otpReqJson.success === true, 'Portal OTP request successful');
+  assert(!!otpReqJson.txnId, 'Portal OTP returns txnId');
+  assert(otpReqJson.cooldownSeconds === 60, 'Portal OTP enforces 60s cooldown');
+
+  // Test 10: Portal OTP Verify - Incorrect code rejection
+  const badVerifyRes = await app.request('/api/v1/portal/otp/verify', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-zerotax-timestamp': String(nowSec),
+    },
+    body: JSON.stringify({
+      pan: 'ABCDE1234F',
+      txnId: otpReqJson.txnId,
+      otp: '000000',
+    }),
+  });
+  assert(badVerifyRes.status === 400, 'POST /api/v1/portal/otp/verify rejects invalid OTP with 400');
+  const badVerifyJson = (await badVerifyRes.json()) as any;
+  assert(badVerifyJson.errorCode === 'INVALID_OTP', 'Error code is INVALID_OTP');
+
   console.log(`\n================================================================`);
   console.log(`Test Results: ${passed} Passed, ${failed} Failed`);
   console.log(`================================================================`);
