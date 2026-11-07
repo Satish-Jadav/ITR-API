@@ -171,3 +171,28 @@ export const FcmRegisterSchema = z
     advanceTaxAlertsEnabled: z.boolean().default(true),
   })
   .strict();
+
+// 7. Portal & Aadhaar Verification Schemas
+export const PortalOtpRequestSchema = z
+  .object({
+    pan: z.string().regex(PAN_REGEX),
+    purpose: z.enum(['LOGIN_PORTAL', 'E_VERIFY_140A', 'AIS_SYNC']).default('LOGIN_PORTAL'),
+  })
+  .strict();
+
+export const PortalOtpVerifySchema = z
+  .object({
+    pan: z.string().regex(PAN_REGEX),
+    txnId: z.string().uuid(),
+    otp: z.string().regex(/^\d{6}$/),
+  })
+  .strict();
+
+export const PortalSyncRequestSchema = z
+  .object({
+    pan: z.string().regex(PAN_REGEX),
+    txnId: z.string().uuid(),
+    verificationToken: z.string().min(32),
+    assessmentYear: z.string().regex(AY_REGEX).default('2026-27'),
+  })
+  .strict();
