@@ -2,7 +2,9 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
   "buildCommand": "node scripts/db-push.js && npx tsc --noEmit",
-  "regions": ["bom1"],
+  "regions": [
+    "bom1"
+  ],
   "redirects": [
     {
       "source": "/",
@@ -26,19 +28,58 @@
     {
       "source": "/api/v1/(auth|vault|chat|aa)/(.*)",
       "headers": [
-        { "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate, proxy-revalidate" }
+        {
+          "key": "Cache-Control",
+          "value": "no-store, no-cache, must-revalidate, proxy-revalidate"
+        }
       ]
     },
     {
       "source": "/api/(.*)",
       "headers": [
-        { "key": "Strict-Transport-Security", "value": "max-age=63072000; includeSubDomains; preload" },
-        { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "X-Frame-Options", "value": "DENY" },
-        { "key": "Content-Security-Policy", "value": "default-src 'none'; frame-ancestors 'none'" },
-        { "key": "Referrer-Policy", "value": "no-referrer" },
-        { "key": "Permissions-Policy", "value": "geolocation=(), microphone=(), camera=()" }
+        {
+          "key": "Strict-Transport-Security",
+          "value": "max-age=63072000; includeSubDomains; preload"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'none'; frame-ancestors 'none'"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "no-referrer"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "geolocation=(), microphone=(), camera=()"
+        }
       ]
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/v1/cron/statutory-sync",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/v1/cron/portal-probe",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/v1/cron/aa-periodic-pull",
+      "schedule": "0 3 1 * *"
+    },
+    {
+      "path": "/api/v1/cron/advance-tax-alerter",
+      "schedule": "0 4 1,10,14 3,6,9,12 *"
     }
   ]
 }

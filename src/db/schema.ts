@@ -16,6 +16,7 @@ import {
   index,
   primaryKey,
   unique,
+  numeric,
 } from 'drizzle-orm/pg-core';
 
 // PostgreSQL bytea type mapping
@@ -293,5 +294,214 @@ export const chatFilingSessions = pgTable(
   },
   (table) => [
     index('idx_chat_sessions_user').on(table.userId, table.updatedAt),
+  ]
+);
+
+
+// ----------------------------------------------------------------------------
+// 13. Portal & Aadhaar OTP Verification Sessions
+// ----------------------------------------------------------------------------
+export const portalOtpVerificationSessions = pgTable(
+  'portal_otp_verification_sessions',
+  {
+    txnId: uuid('txn_id').primaryKey(),
+    pan: varchar('pan', { length: 10 }).notNull(),
+    hashedOtp: varchar('hashed_otp', { length: 64 }).notNull(),
+    salt: varchar('salt', { length: 32 }).notNull(),
+    purpose: varchar('purpose', { length: 32 }).default('LOGIN_PORTAL').notNull(),
+    attempts: integer('attempts').default(0).notNull(),
+    verified: boolean('verified').default(false).notNull(),
+    verificationToken: varchar('verification_token', { length: 64 }),
+    cpcVerificationRef: varchar('cpc_verification_ref', { length: 64 }),
+    clientIp: varchar('client_ip', { length: 45 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    lastRequestedAt: timestamp('last_requested_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_portal_otp_pan').on(table.pan),
+    index('idx_portal_otp_expires').on(table.expiresAt),
+  ]
+);
+
+// ----------------------------------------------------------------------------
+// 14. Verified Portal Sync Snapshots
+// ----------------------------------------------------------------------------
+export const portalSyncSnapshots = pgTable(
+  'portal_sync_snapshots',
+  {
+    snapshotId: uuid('snapshot_id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.userId, { onDelete: 'cascade' }),
+    pan: varchar('pan', { length: 10 }).notNull(),
+    assessmentYear: varchar('assessment_year', { length: 7 }).default('2026-27').notNull(),
+    sourceOrigin: varchar('source_origin', { length: 32 }).default('ITD_DIRECT_PORTAL').notNull(),
+    recordCount: integer('record_count').default(0).notNull(),
+    aggregateGrossAmount: bigint('aggregate_gross_amount', { mode: 'number' }).default(0).notNull(),
+    aggregateTdsCredit: bigint('aggregate_tds_credit', { mode: 'number' }).default(0).notNull(),
+    encryptedSnapshotPayload: text('encrypted_snapshot_payload'),
+    snapshotJson: jsonb('snapshot_json'),
+    syncedAt: timestamp('synced_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_portal_sync_pan_ay').on(table.pan, table.assessmentYear),
+  ]
+);
+
+// ----------------------------------------------------------------------------
+// 15. Statutory Cost Inflation Index (CII) Master Table
+// ----------------------------------------------------------------------------
+export const statutoryCiiRatesMaster = pgTable(
+  'statutory_cii_rates_master',
+  {
+    financialYear: varchar('financial_year', { length: 7 }).primaryKey(),
+    ciiIndex: integer('cii_index').notNull(),
+    notificationRef: varchar('notification_ref', { length: 128 }),
+    publishedAt: timestamp('published_at', { withTimezone: true }).defaultNow().notNull(),
+  }
+);
+
+// ----------------------------------------------------------------------------
+// 16. Statutory Filing Milestones
+// ----------------------------------------------------------------------------
+export const statutoryFilingMilestones = pgTable(
+  'statutory_filing_milestones',
+  {
+    milestoneId: uuid('milestone_id').defaultRandom().primaryKey(),
+    assessmentYear: varchar('assessment_year', { length: 7 }).default('2026-27').notNull(),
+    milestoneCode: varchar('milestone_code', { length: 32 }).notNull(),
+    milestoneLabel: varchar('milestone_label', { length: 128 }).notNull(),
+    dueDate: date('due_date').notNull(),
+    penaltySection: varchar('penalty_section', { length: 16 }),
+    circularRef: varchar('circular_ref', { length: 128 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  }
+);
+
+// ----------------------------------------------------------------------------
+// 17. Income Tax Portal Health Telemetry Probes
+// ----------------------------------------------------------------------------
+export const portalHealthTelemetry = pgTable(
+  'portal_health_telemetry',
+  {
+    probeId: bigserial('probe_id', { mode: 'number' }).primaryKey(),
+    probeTimestamp: timestamp('probe_timestamp', { withTimezone: true }).defaultNow().notNull(),
+    eportalStatus: varchar('eportal_status', { length: 24 }).default('HEALTHY').notNull(),
+    aisPortalStatus: varchar('ais_portal_status', { length: 24 }).default('HEALTHY').notNull(),
+    tracesStatus: varchar('traces_status', { length: 24 }).default('HEALTHY').notNull(),
+    responseTimeMs: integer('response_time_ms').default(450).notNull(),
+    isHealthy: boolean('is_healthy').default(true).notNull(),
+  },
+  (table) => [
+    index('idx_portal_health_time').on(table.probeTimestamp),
+  ]
+);
+
+// ----------------------------------------------------------------------------
+// 18. DTAA Country Treaty Rates Master Table
+// ----------------------------------------------------------------------------
+export const dtaaCountryTreatyRates = pgTable(
+  'dtaa_country_treaty_rates',
+  {
+    countryCode: char('country_code', { length: 2 }).notNull(),
+    countryName: varchar('country_name', { length: 100 }).notNull(),
+    articleNumber: varchar('article_number', { length: 16 }).notNull(),
+    incomeType: varchar('income_type', { length: 32 }).notNull(),
+    withholdingRatePercent: numeric('withholding_rate_percent', { precision: 5, scale: 2 }).notNull(),
+    sourceCircular: varchar('source_circular', { length: 128 }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.countryCode, table.incomeType] }),
+  ]
+);
+
+// ----------------------------------------------------------------------------
+// 19. ECI Registered Political Parties
+// ----------------------------------------------------------------------------
+export const eciRegisteredPoliticalParties = pgTable(
+  'eci_registered_political_parties',
+  {
+    partyRegistrationNo: varchar('party_registration_no', { length: 64 }).primaryKey(),
+    partyName: varchar('party_name', { length: 200 }).notNull(),
+    stateCode: char('state_code', { length: 2 }),
+    isEligible80ggc: boolean('is_eligible_80ggc').default(true).notNull(),
+  }
+);
+
+// ----------------------------------------------------------------------------
+// 20. CA Shared Dossier Audit Comments
+// ----------------------------------------------------------------------------
+export const caDossierAuditComments = pgTable(
+  'ca_dossier_audit_comments',
+  {
+    commentId: uuid('comment_id').defaultRandom().primaryKey(),
+    shareId: uuid('share_id').references(() => caSharedReviewLinks.shareId, { onDelete: 'cascade' }).notNull(),
+    caMembershipNo: varchar('ca_membership_no', { length: 32 }).notNull(),
+    commentText: text('comment_text').notNull(),
+    recommendedAction: varchar('recommended_action', { length: 64 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_ca_comments_share').on(table.shareId),
+  ]
+);
+
+// ----------------------------------------------------------------------------
+// 21. Statutory RAG Knowledge Chunks (Income Tax Act & Circulars)
+// ----------------------------------------------------------------------------
+export const statutoryRagKnowledgeChunks = pgTable(
+  'statutory_rag_knowledge_chunks',
+  {
+    chunkId: uuid('chunk_id').defaultRandom().primaryKey(),
+    sectionCode: varchar('section_code', { length: 32 }).notNull(),
+    actOrCircular: varchar('act_or_circular', { length: 128 }).notNull(),
+    title: varchar('title', { length: 256 }).notNull(),
+    content: text('content').notNull(),
+    tokenCount: integer('token_count').default(0).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_rag_section').on(table.sectionCode),
+  ]
+);
+
+// ----------------------------------------------------------------------------
+// 22. Chat Messages Ledger
+// ----------------------------------------------------------------------------
+export const chatMessagesLedger = pgTable(
+  'chat_messages_ledger',
+  {
+    ledgerId: uuid('ledger_id').defaultRandom().primaryKey(),
+    sessionId: uuid('session_id').references(() => chatFilingSessions.sessionId, { onDelete: 'cascade' }).notNull(),
+    sender: varchar('sender', { length: 16 }).notNull(),
+    content: text('content').notNull(),
+    toolCalls: jsonb('tool_calls'),
+    ragCitations: jsonb('rag_citations'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_ledger_session').on(table.sessionId, table.createdAt),
+  ]
+);
+
+// ----------------------------------------------------------------------------
+// 23. Filing Speed & SLA Telemetry
+// ----------------------------------------------------------------------------
+export const filingSpeedTelemetry = pgTable(
+  'filing_speed_telemetry',
+  {
+    telemetryId: uuid('telemetry_id').defaultRandom().primaryKey(),
+    anonymizedFilingId: varchar('anonymized_filing_id', { length: 64 }).notNull(),
+    itrType: varchar('itr_type', { length: 16 }).notNull(),
+    assessmentYear: varchar('assessment_year', { length: 7 }).default('2026-27').notNull(),
+    startTimestamp: timestamp('start_timestamp', { withTimezone: true }).notNull(),
+    submissionTimestamp: timestamp('submission_timestamp', { withTimezone: true }).notNull(),
+    everifyTimestamp: timestamp('everify_timestamp', { withTimezone: true }).notNull(),
+    totalDurationSeconds: numeric('total_duration_seconds', { precision: 6, scale: 2 }).notNull(),
+    clientPlatform: varchar('client_platform', { length: 32 }).default('ANDROID').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_filing_speed_duration').on(table.totalDurationSeconds),
+    index('idx_filing_speed_itr').on(table.itrType, table.assessmentYear),
   ]
 );

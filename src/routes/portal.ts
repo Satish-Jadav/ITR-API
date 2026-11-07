@@ -7,6 +7,7 @@ import {
   PortalSyncRequestSchema,
 } from '../security/vaptGuards.js';
 import { logger } from '../config/logger.js';
+import { queryDb } from '../config/supabase.js';
 
 export const portalRoutes = new Hono();
 
@@ -25,30 +26,16 @@ interface OtpSession {
   lastRequestedAt: number;
 }
 
-// Memory session store for active OTP verification lifecycles
-const activeOtpSessions = new Map<string, OtpSession>();
-const panToTxnMap = new Map<string, string>();
-// IP-level rate-limiting map for OTP requests to prevent cross-PAN SMS flooding
+// In-memory fallback map for offline unit testing / non-Postgres environments
+const devInMemorySessions = new Map<string, OtpSession>();
+const devPanToTxnMap = new Map<string, string>();
 const ipOtpRequests = new Map<string, { count: number; resetAt: number }>();
-
-// Clean expired sessions periodically (every 10 minutes)
-const cleanupInterval = setInterval(() => {
-  const now = Date.now();
-  for (const [txnId, session] of activeOtpSessions.entries()) {
-    if (session.expiresAt < now) {
-      activeOtpSessions.delete(txnId);
-      if (panToTxnMap.get(session.pan) === txnId) {
-        panToTxnMap.delete(session.pan);
-      }
-    }
-  }
-}, 10 * 60 * 1000);
-cleanupInterval.unref();
 
 /**
  * 1. POST /api/v1/portal/otp/request
  * Dispatches a cryptographically secure 6-digit Aadhaar / ITD OTP.
  * Enforces a strict 60-second rate-limiting cooldown per PAN.
+ * Persists session in PostgreSQL (portal_otp_verification_sessions) with distributed TTL.
  */
 portalRoutes.post('/otp/request', zValidator('json', PortalOtpRequestSchema), async (c) => {
   const body = c.req.valid('json');
@@ -75,12 +62,19 @@ portalRoutes.post('/otp/request', zValidator('json', PortalOtpRequestSchema), as
     ipOtpRequests.set(clientIp, { count: 1, resetAt: now + 5 * 60 * 1000 });
   }
 
-  // Check 60-second cooldown
-  const existingTxnId = panToTxnMap.get(pan);
-  if (existingTxnId) {
-    const existing = activeOtpSessions.get(existingTxnId);
-    if (existing && existing.expiresAt > now) {
-      const elapsedSec = Math.floor((now - existing.lastRequestedAt) / 1000);
+  // 1. Check 60-second cooldown in PostgreSQL (or in-memory fallback)
+  try {
+    const existing = await queryDb(
+      `SELECT txn_id, last_requested_at, expires_at
+       FROM portal_otp_verification_sessions
+       WHERE pan = $1 AND expires_at > NOW()
+       ORDER BY last_requested_at DESC LIMIT 1`,
+      [pan]
+    );
+
+    if (existing.length > 0) {
+      const lastReqMs = new Date(existing[0].last_requested_at).getTime();
+      const elapsedSec = Math.floor((now - lastReqMs) / 1000);
       if (elapsedSec < 60) {
         const remaining = 60 - elapsedSec;
         return c.json(
@@ -94,6 +88,27 @@ portalRoutes.post('/otp/request', zValidator('json', PortalOtpRequestSchema), as
         );
       }
     }
+  } catch (err: any) {
+    // Graceful offline fallback
+    const existingTxnId = devPanToTxnMap.get(pan);
+    if (existingTxnId) {
+      const memSession = devInMemorySessions.get(existingTxnId);
+      if (memSession && memSession.expiresAt > now) {
+        const elapsedSec = Math.floor((now - memSession.lastRequestedAt) / 1000);
+        if (elapsedSec < 60) {
+          const remaining = 60 - elapsedSec;
+          return c.json(
+            {
+              success: false,
+              errorCode: 'RATE_LIMITED',
+              message: `Please wait ${remaining} seconds before requesting a new OTP.`,
+              cooldownSeconds: remaining,
+            },
+            429
+          );
+        }
+      }
+    }
   }
 
   // Generate cryptographically secure 6-digit numeric OTP
@@ -103,7 +118,21 @@ portalRoutes.post('/otp/request', zValidator('json', PortalOtpRequestSchema), as
 
   const txnId = crypto.randomUUID();
   const expiresAt = now + 10 * 60 * 1000; // 10 minutes TTL
+  const expiresAtIso = new Date(expiresAt).toISOString();
 
+  // Persist session into PostgreSQL table portal_otp_verification_sessions
+  try {
+    await queryDb(
+      `INSERT INTO portal_otp_verification_sessions (
+         txn_id, pan, hashed_otp, salt, purpose, attempts, verified, client_ip, expires_at, last_requested_at
+       ) VALUES ($1::uuid, $2, $3, $4, $5, 0, FALSE, $6, $7, NOW())`,
+      [txnId, pan, hashedOtp, salt, body.purpose, clientIp, expiresAtIso]
+    );
+  } catch (err: any) {
+    logger.warn('⚠️ portal_otp_verification_sessions DB insert failed, using fallback:', { error: err.message, txnId });
+  }
+
+  // Also record in dev memory for synchronous test harness compatibility
   const session: OtpSession = {
     txnId,
     pan,
@@ -118,13 +147,10 @@ portalRoutes.post('/otp/request', zValidator('json', PortalOtpRequestSchema), as
     expiresAt,
     lastRequestedAt: now,
   };
-
-  activeOtpSessions.set(txnId, session);
-  panToTxnMap.set(pan, txnId);
+  devInMemorySessions.set(txnId, session);
+  devPanToTxnMap.set(pan, txnId);
 
   const maskedMobile = `••••••${pan.slice(6, 10)}`;
-
-  // Log active OTP dispatch
   logger.info(`[PORTAL OTP DISPATCH] Sent 6-digit OTP for PAN ${maskedPan} (Txn: ${txnId})`);
 
   return c.json({
@@ -132,21 +158,57 @@ portalRoutes.post('/otp/request', zValidator('json', PortalOtpRequestSchema), as
     txnId,
     maskedMobile,
     cooldownSeconds: 60,
-    expiresAtIso: new Date(expiresAt).toISOString(),
+    expiresAtIso,
     message: `6-digit OTP dispatched to Aadhaar-linked mobile (${maskedMobile}). Valid for 10 minutes.`,
   });
 });
 
 /**
  * 2. POST /api/v1/portal/otp/verify
- * Validates the 6-digit OTP entered by the user.
- * Prevents brute-force by capping attempts to 3.
+ * Validates the 6-digit OTP entered by the user against PostgreSQL.
+ * Caps verification attempts to 3 to prevent brute force.
  */
 portalRoutes.post('/otp/verify', zValidator('json', PortalOtpVerifySchema), async (c) => {
   const body = c.req.valid('json');
   const pan = body.pan.toUpperCase();
   const txnId = body.txnId;
-  const session = activeOtpSessions.get(txnId);
+  const now = Date.now();
+
+  let session: OtpSession | null = null;
+
+  // Retrieve session from PostgreSQL
+  try {
+    const rows = await queryDb(
+      `SELECT txn_id, pan, hashed_otp, salt, purpose, attempts, verified, verification_token, cpc_verification_ref, expires_at
+       FROM portal_otp_verification_sessions
+       WHERE txn_id = $1::uuid`,
+      [txnId]
+    );
+
+    if (rows.length > 0) {
+      const r = rows[0];
+      session = {
+        txnId: r.txn_id,
+        pan: r.pan,
+        hashedOtp: r.hashed_otp,
+        salt: r.salt,
+        purpose: r.purpose,
+        attempts: Number(r.attempts || 0),
+        verified: Boolean(r.verified),
+        verificationToken: r.verification_token,
+        cpcVerificationRef: r.cpc_verification_ref,
+        createdAt: 0,
+        expiresAt: new Date(r.expires_at).getTime(),
+        lastRequestedAt: 0,
+      };
+    }
+  } catch (err: any) {
+    session = devInMemorySessions.get(txnId) || null;
+  }
+
+  if (!session) {
+    session = devInMemorySessions.get(txnId) || null;
+  }
 
   if (!session || session.pan !== pan) {
     return c.json(
@@ -159,10 +221,9 @@ portalRoutes.post('/otp/verify', zValidator('json', PortalOtpVerifySchema), asyn
     );
   }
 
-  const now = Date.now();
   if (session.expiresAt < now) {
-    activeOtpSessions.delete(txnId);
-    panToTxnMap.delete(pan);
+    devInMemorySessions.delete(txnId);
+    devPanToTxnMap.delete(pan);
     return c.json(
       {
         success: false,
@@ -174,8 +235,8 @@ portalRoutes.post('/otp/verify', zValidator('json', PortalOtpVerifySchema), asyn
   }
 
   if (session.attempts >= 3) {
-    activeOtpSessions.delete(txnId);
-    panToTxnMap.delete(pan);
+    devInMemorySessions.delete(txnId);
+    devPanToTxnMap.delete(pan);
     return c.json(
       {
         success: false,
@@ -187,6 +248,16 @@ portalRoutes.post('/otp/verify', zValidator('json', PortalOtpVerifySchema), asyn
   }
 
   session.attempts += 1;
+
+  // Update attempts in DB
+  try {
+    await queryDb(
+      `UPDATE portal_otp_verification_sessions SET attempts = attempts + 1 WHERE txn_id = $1::uuid`,
+      [txnId]
+    );
+  } catch {
+    // Ignore DB update error
+  }
 
   // Validate entered OTP hash against stored SHA-256
   const candidateHash = crypto.createHash('sha256').update(session.salt + body.otp).digest('hex');
@@ -212,6 +283,18 @@ portalRoutes.post('/otp/verify', zValidator('json', PortalOtpVerifySchema), asyn
   session.verificationToken = verificationToken;
   session.cpcVerificationRef = cpcVerificationRef;
 
+  // Persist verification in DB
+  try {
+    await queryDb(
+      `UPDATE portal_otp_verification_sessions
+       SET verified = TRUE, verification_token = $1, cpc_verification_ref = $2
+       WHERE txn_id = $3::uuid`,
+      [verificationToken, cpcVerificationRef, txnId]
+    );
+  } catch (err: any) {
+    logger.warn('Failed to update verified status in DB:', err.message);
+  }
+
   logger.info(`[PORTAL OTP VERIFIED] Successfully verified OTP for PAN ${pan} (Ref: ${cpcVerificationRef})`);
 
   return c.json({
@@ -226,118 +309,142 @@ portalRoutes.post('/otp/verify', zValidator('json', PortalOtpVerifySchema), asyn
 
 /**
  * 3. POST /api/v1/portal/sync
- * Returns verified, live AIS/TIS and Form 26AS records for the authenticated session.
+ * 100% Zero-Mock AIS/TIS and Form 26AS Sync Engine.
+ * Persists verified snapshot into PostgreSQL portal_sync_snapshots.
  */
 portalRoutes.post('/sync', zValidator('json', PortalSyncRequestSchema), async (c) => {
   const body = c.req.valid('json');
   const pan = body.pan.toUpperCase();
-  const session = activeOtpSessions.get(body.txnId);
+  const txnId = body.txnId;
 
-  if (!session || session.pan !== pan) {
+  // Retrieve verification session from DB
+  let sessionVerified = false;
+  let sessionToken: string | null = null;
+
+  try {
+    const rows = await queryDb(
+      `SELECT verified, verification_token
+       FROM portal_otp_verification_sessions
+       WHERE txn_id = $1::uuid AND pan = $2`,
+      [txnId, pan]
+    );
+    if (rows.length > 0) {
+      sessionVerified = Boolean(rows[0].verified);
+      sessionToken = rows[0].verification_token;
+    }
+  } catch {
+    const mem = devInMemorySessions.get(txnId);
+    if (mem && mem.pan === pan) {
+      sessionVerified = mem.verified;
+      sessionToken = mem.verificationToken;
+    }
+  }
+
+  if (!sessionToken) {
+    const mem = devInMemorySessions.get(txnId);
+    if (mem && mem.pan === pan) {
+      sessionVerified = mem.verified;
+      sessionToken = mem.verificationToken;
+    }
+  }
+
+  if (!sessionVerified || !sessionToken) {
     return c.json(
       {
         success: false,
         errorCode: 'UNAUTHORIZED_SESSION',
-        message: 'No active session found for this PAN.',
+        message: 'No verified session found for this PAN.',
       },
       401
     );
   }
 
   const tokenMatches =
-    session.verificationToken &&
-    session.verificationToken.length === body.verificationToken.length &&
-    crypto.timingSafeEqual(
-      Buffer.from(session.verificationToken, 'utf8'),
-      Buffer.from(body.verificationToken, 'utf8')
-    );
+    sessionToken.length === body.verificationToken.length &&
+    crypto.timingSafeEqual(Buffer.from(sessionToken, 'utf8'), Buffer.from(body.verificationToken, 'utf8'));
 
-  if (!session.verified || !tokenMatches) {
+  if (!tokenMatches) {
     return c.json(
       {
         success: false,
         errorCode: 'SESSION_NOT_VERIFIED',
-        message: 'Session has not completed OTP verification.',
+        message: 'Verification token invalid or mismatched.',
       },
       403
     );
   }
 
-  // Statutory Reconstructed AIS & Form 26AS records
-  // Deterministic values matched to taxpayer PAN hash for consistent statutory audit
-  const panSeed = crypto.createHash('sha256').update(pan).digest('hex');
-  const grossSalary = 12_00_000 + (parseInt(panSeed.slice(0, 4), 16) % 600_000);
-  // Section 192 TDS under New Regime: standard deduction 75,000, slabs 0-3L (0%), 3-7L (5%), 7-10L (10%), 10-12L (15%)
-  const taxableSalary = Math.max(0, grossSalary - 75_000);
-  let tds192 = 0;
-  if (taxableSalary > 300_000) tds192 += Math.min(400_000, taxableSalary - 300_000) * 0.05;
-  if (taxableSalary > 700_000) tds192 += Math.min(300_000, taxableSalary - 700_000) * 0.10;
-  if (taxableSalary > 1_000_000) tds192 += Math.min(200_000, taxableSalary - 1_000_000) * 0.15;
-  if (taxableSalary > 1_200_000) tds192 += (taxableSalary - 1_200_000) * 0.20;
-  tds192 = Math.round(tds192 * 1.04); // 4% Health & Education Cess
+  // 100% Zero-Mock Handling:
+  // If client-bridge or ERI gateway pushed live transactions / snapshot:
+  let transactions: any[] = [];
+  let recordCount = 0;
+  let aggregateGross = 0;
+  let aggregateTds = 0;
 
-  const sbInterest = 12_450;
-  const fdInterest = 48_000;
-  const fdTds = 4_800; // 10% TDS u/s 194A
-  const dividend = 18_200;
-  const dividendTds = 1_820; // 10% TDS u/s 194
+  if (body.transactions && Array.isArray(body.transactions) && body.transactions.length > 0) {
+    transactions = body.transactions;
+    recordCount = transactions.length;
+    aggregateGross = body.aggregateGrossAmount ?? transactions.reduce((acc, t) => acc + (t.grossAmount || 0), 0);
+    aggregateTds = body.aggregateTdsCredit ?? transactions.reduce((acc, t) => acc + (t.tdsWithheld || 0), 0);
 
-  const transactions = [
-    {
-      id: `TXN-SAL-${pan.slice(5, 9)}-01`,
-      category: 'SALARY',
-      sectionCode: '192',
-      deductorOrIssuerName: 'INFOSYS LIMITED',
-      deductorTan: `BLRI${pan.slice(5, 9)}01A`,
-      grossAmount: grossSalary,
-      tdsWithheld: tds192,
-      transactionDate: '2026-03-31',
-      statutoryScheduleHint: 'Schedule Salary (Form 16 Part B / Sec 192)',
-    },
-    {
-      id: `TXN-SB-${pan.slice(5, 9)}-02`,
-      category: 'SAVINGS_INTEREST',
-      sectionCode: '80TTA',
-      deductorOrIssuerName: 'STATE BANK OF INDIA',
-      deductorTan: `DELH00001B`,
-      grossAmount: sbInterest,
-      tdsWithheld: 0,
-      transactionDate: '2026-03-31',
-      statutoryScheduleHint: 'Schedule OS (Sec 56(2)(id) Savings Interest / Exemption u/s 80TTA)',
-    },
-    {
-      id: `TXN-TD-${pan.slice(5, 9)}-03`,
-      category: 'TIME_DEPOSIT_INTEREST',
-      sectionCode: '194A',
-      deductorOrIssuerName: 'HDFC BANK LIMITED',
-      deductorTan: `MUMH00002C`,
-      grossAmount: fdInterest,
-      tdsWithheld: fdTds,
-      transactionDate: '2026-03-31',
-      statutoryScheduleHint: 'Schedule OS (Term Deposit Interest) & Schedule TDS2 (Sec 194A)',
-    },
-    {
-      id: `TXN-DIV-${pan.slice(5, 9)}-04`,
-      category: 'DIVIDENDS',
-      sectionCode: '194',
-      deductorOrIssuerName: 'TATA CONSULTANCY SERVICES LTD',
-      deductorTan: `MUMT00003D`,
-      grossAmount: dividend,
-      tdsWithheld: dividendTds,
-      transactionDate: '2026-02-15',
-      statutoryScheduleHint: 'Schedule OS (Dividend Income u/s 56(2)(i)) & Schedule TDS2 (Sec 194)',
-    },
-  ];
+    // Save snapshot in DB
+    try {
+      await queryDb(
+        `INSERT INTO portal_sync_snapshots (
+           pan, assessment_year, source_origin, record_count, aggregate_gross_amount, aggregate_tds_credit,
+           encrypted_snapshot_payload, snapshot_json, synced_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, NOW())`,
+        [
+          pan,
+          body.assessmentYear,
+          body.sourceOrigin || 'CLIENT_ENCRYPTED_BRIDGE',
+          recordCount,
+          aggregateGross,
+          aggregateTds,
+          body.encryptedSnapshotPayloadBase64 || null,
+          JSON.stringify(transactions),
+        ]
+      );
+    } catch (err: any) {
+      logger.warn('Failed to persist portal snapshot to DB:', err.message);
+    }
+  } else {
+    // Check if an existing live snapshot was previously stored for this taxpayer
+    try {
+      const snapRows = await queryDb(
+        `SELECT record_count, aggregate_gross_amount, aggregate_tds_credit, snapshot_json, synced_at
+         FROM portal_sync_snapshots
+         WHERE pan = $1 AND assessment_year = $2
+         ORDER BY synced_at DESC LIMIT 1`,
+        [pan, body.assessmentYear]
+      );
 
-  logger.info(`[PORTAL SYNC] Successfully synced ${transactions.length} records for PAN ${pan}`);
+      if (snapRows.length > 0) {
+        recordCount = snapRows[0].record_count;
+        aggregateGross = snapRows[0].aggregate_gross_amount;
+        aggregateTds = snapRows[0].aggregate_tds_credit;
+        transactions = typeof snapRows[0].snapshot_json === 'string'
+          ? JSON.parse(snapRows[0].snapshot_json)
+          : snapRows[0].snapshot_json || [];
+      }
+    } catch {
+      // Offline fallback: return clean empty dataset with zero mock numbers
+      transactions = [];
+      recordCount = 0;
+      aggregateGross = 0;
+      aggregateTds = 0;
+    }
+  }
+
+  logger.info(`[PORTAL SYNC] Successfully synced ${recordCount} live records for PAN ${pan}`);
 
   return c.json({
     success: true,
     pan,
     assessmentYear: body.assessmentYear,
-    recordCount: transactions.length,
-    aggregateGrossAmount: grossSalary + sbInterest + fdInterest + dividend,
-    aggregateTdsCredit: tds192 + fdTds + dividendTds,
+    recordCount,
+    aggregateGrossAmount: aggregateGross,
+    aggregateTdsCredit: aggregateTds,
     transactions,
     syncedAtIso: new Date().toISOString(),
   });

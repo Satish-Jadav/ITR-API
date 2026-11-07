@@ -8,6 +8,7 @@ import { aiRoutes } from './routes/ai.js';
 import { chatRoutes } from './routes/chat.js';
 import { complianceRoutes } from './routes/compliance.js';
 import { portalRoutes } from './routes/portal.js';
+import { cronRoutes } from './routes/cron.js';
 import { checkDbHealth } from './config/supabase.js';
 import { logger, formatError } from './config/logger.js';
 import { env } from './config/env.js';
@@ -74,6 +75,7 @@ app.route('/api/v1/ai', aiRoutes);
 app.route('/api/v1/chat', chatRoutes);
 app.route('/api/v1/compliance', complianceRoutes);
 app.route('/api/v1/portal', portalRoutes);
+app.route('/api/v1/cron', cronRoutes);
 
 // 5. API-VAPT-11: Global Error Handler with Rich Server-Side Logging
 app.onError((err, c) => {
