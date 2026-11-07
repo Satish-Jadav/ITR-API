@@ -28,6 +28,8 @@ interface OtpSession {
 // Memory session store for active OTP verification lifecycles
 const activeOtpSessions = new Map<string, OtpSession>();
 const panToTxnMap = new Map<string, string>();
+// IP-level rate-limiting map for OTP requests to prevent cross-PAN SMS flooding
+const ipOtpRequests = new Map<string, { count: number; resetAt: number }>();
 
 // Clean expired sessions periodically (every 10 minutes)
 const cleanupInterval = setInterval(() => {
@@ -53,6 +55,25 @@ portalRoutes.post('/otp/request', zValidator('json', PortalOtpRequestSchema), as
   const pan = body.pan.toUpperCase();
   const maskedPan = `${pan.slice(0, 2)}***${pan.slice(8)}`;
   const now = Date.now();
+
+  // Enforce IP-level rate-limiting (max 10 OTP requests per 5 minutes per IP)
+  const clientIp = c.req.header('x-forwarded-for')?.split(',')[0].trim() || '127.0.0.1';
+  const ipRecord = ipOtpRequests.get(clientIp);
+  if (ipRecord && ipRecord.resetAt > now) {
+    if (ipRecord.count >= 10) {
+      return c.json(
+        {
+          success: false,
+          errorCode: 'TOO_MANY_OTP_REQUESTS_FROM_IP',
+          message: 'Too many OTP requests from this network. Please wait 5 minutes before trying again.',
+        },
+        429
+      );
+    }
+    ipRecord.count += 1;
+  } else {
+    ipOtpRequests.set(clientIp, { count: 1, resetAt: now + 5 * 60 * 1000 });
+  }
 
   // Check 60-second cooldown
   const existingTxnId = panToTxnMap.get(pan);
@@ -223,7 +244,15 @@ portalRoutes.post('/sync', zValidator('json', PortalSyncRequestSchema), async (c
     );
   }
 
-  if (!session.verified || session.verificationToken !== body.verificationToken) {
+  const tokenMatches =
+    session.verificationToken &&
+    session.verificationToken.length === body.verificationToken.length &&
+    crypto.timingSafeEqual(
+      Buffer.from(session.verificationToken, 'utf8'),
+      Buffer.from(body.verificationToken, 'utf8')
+    );
+
+  if (!session.verified || !tokenMatches) {
     return c.json(
       {
         success: false,
