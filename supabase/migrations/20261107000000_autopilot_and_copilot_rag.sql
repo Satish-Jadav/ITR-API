@@ -13,6 +13,7 @@ CREATE EXTENSION IF NOT EXISTS "vector";
 CREATE TABLE IF NOT EXISTS portal_otp_verification_sessions (
     txn_id UUID PRIMARY KEY,
     pan VARCHAR(10) NOT NULL CHECK (pan ~ '^[A-Z]{5}[0-9]{4}[A-Z]$'),
+    pan_blind_index_hmac VARCHAR(64),
     hashed_otp VARCHAR(64) NOT NULL,
     salt VARCHAR(32) NOT NULL,
     purpose VARCHAR(32) NOT NULL DEFAULT 'LOGIN_PORTAL'
@@ -27,6 +28,7 @@ CREATE TABLE IF NOT EXISTS portal_otp_verification_sessions (
     last_requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_portal_otp_pan ON portal_otp_verification_sessions(pan);
+CREATE INDEX IF NOT EXISTS idx_portal_otp_pan_hmac ON portal_otp_verification_sessions(pan_blind_index_hmac);
 CREATE INDEX IF NOT EXISTS idx_portal_otp_expires ON portal_otp_verification_sessions(expires_at);
 
 -- ----------------------------------------------------------------------------
@@ -36,6 +38,7 @@ CREATE TABLE IF NOT EXISTS portal_sync_snapshots (
     snapshot_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
     pan VARCHAR(10) NOT NULL CHECK (pan ~ '^[A-Z]{5}[0-9]{4}[A-Z]$'),
+    pan_blind_index_hmac VARCHAR(64),
     assessment_year VARCHAR(7) NOT NULL DEFAULT '2026-27',
     source_origin VARCHAR(32) NOT NULL DEFAULT 'ITD_DIRECT_PORTAL'
         CHECK (source_origin IN ('ITD_DIRECT_PORTAL', 'ERI_GATEWAY', 'CLIENT_ENCRYPTED_BRIDGE', 'AA_AGGREGATOR')),
@@ -47,6 +50,7 @@ CREATE TABLE IF NOT EXISTS portal_sync_snapshots (
     synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_portal_sync_pan_ay ON portal_sync_snapshots(pan, assessment_year);
+CREATE INDEX IF NOT EXISTS idx_portal_sync_pan_hmac ON portal_sync_snapshots(pan_blind_index_hmac);
 
 -- ----------------------------------------------------------------------------
 -- 3. Statutory Cost Inflation Index (CII) Master Table

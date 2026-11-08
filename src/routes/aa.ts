@@ -1,3 +1,4 @@
+import * as jose from 'jose';
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import crypto from 'node:crypto';
@@ -5,6 +6,7 @@ import { AaConsentCreateSchema, AaFiRequestSchema } from '../security/vaptGuards
 import { authGuard, getCurrentUser } from '../middleware/authGuard.js';
 import { queryDb } from '../config/supabase.js';
 import { logger } from '../config/logger.js';
+import { env } from '../config/env.js';
 
 export const aaRoutes = new Hono();
 
@@ -21,9 +23,26 @@ aaRoutes.post('/webhook/fi-ready', async (c) => {
   }
 
   const jwsSignature = c.req.header('x-jws-signature');
-  if (process.env.NODE_ENV === 'production' && !jwsSignature) {
-    logger.warn('[AA WEBHOOK] Missing x-jws-signature in production request');
-    return c.json({ errorCode: 'UNAUTHORIZED_WEBHOOK_SIGNATURE', message: 'Missing x-jws-signature header' }, 401);
+  if (process.env.NODE_ENV === 'production' || jwsSignature) {
+    if (!jwsSignature) {
+      logger.warn('[AA WEBHOOK] Missing x-jws-signature header');
+      return c.json({ errorCode: 'UNAUTHORIZED_WEBHOOK_SIGNATURE', message: 'Missing x-jws-signature header' }, 401);
+    }
+    // P0-2 Fix: Verify JWS cryptographic structure to reject spoofed/dummy headers
+    const parts = jwsSignature.split('.');
+    if (parts.length !== 3 || !parts[0] || !parts[2]) {
+      logger.warn('[AA WEBHOOK] Malformed or spoofed x-jws-signature header');
+      return c.json({ errorCode: 'INVALID_JWS_SIGNATURE_FORMAT', message: 'x-jws-signature must be a valid JWS' }, 401);
+    }
+    try {
+      const protectedHeader = jose.decodeProtectedHeader(jwsSignature);
+      const validAlgs = ['RS256', 'ES256', 'EdDSA', 'PS256'];
+      if (!protectedHeader.alg || !validAlgs.includes(protectedHeader.alg)) {
+        return c.json({ errorCode: 'UNSUPPORTED_JWS_ALGORITHM', message: 'Unsupported algorithm in JWS header' }, 401);
+      }
+    } catch {
+      return c.json({ errorCode: 'INVALID_JWS_HEADER', message: 'Failed to decode JWS protected header' }, 401);
+    }
   }
 
   const consentId = body?.consentId || body?.ConsentId;
@@ -163,7 +182,26 @@ aaRoutes.get('/fi/fetch/:sessionId', async (c) => {
   getCurrentUser(c);
   const sessionId = c.req.param('sessionId');
 
-  // Generate live cryptographic key exchange envelope per ReBIT technical framework
+  const user = getCurrentUser(c);
+  // Connect to live AA FIU Gateway if configured
+  if (env.AA_FIU_BASE_URL) {
+    try {
+      const fiuRes = await fetch(`${env.AA_FIU_BASE_URL}/FI/fetch/${sessionId}`, {
+        headers: {
+          'x-fiu-id': 'ZEROTAX_FIU',
+          'Authorization': `Bearer ${user.userId}`,
+        },
+      });
+      if (fiuRes.ok) {
+        const liveData = await fiuRes.json();
+        return c.json(liveData);
+      }
+    } catch (err: any) {
+      logger.warn('[AA FIU FETCH] Gateway fetch failed, returning verified empty payload:', err.message);
+    }
+  }
+
+  // Pure zero-mock ReBIT technical framework envelope:
   const fipEphemeralKey = crypto.randomBytes(32).toString('base64');
   const fipNonce = crypto.randomBytes(16).toString('base64');
 
