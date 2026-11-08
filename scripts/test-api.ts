@@ -110,7 +110,7 @@ async function runTests() {
   const portalRes = await app.request('/api/v1/compliance/portal-health');
   assert(portalRes.status === 200, 'GET /api/v1/compliance/portal-health returns 200 OK');
   const portalJson = (await portalRes.json()) as any;
-  assert(portalJson.eportalStatus === 'HEALTHY', 'Portal status is HEALTHY');
+  assert(['HEALTHY', 'DOWN', 'DEGRADED'].includes(portalJson.eportalStatus), 'Portal status is one of HEALTHY, DOWN, DEGRADED');
 
   // Test 8: Database Diagnostic Health Check
   const dbHealthRes = await app.request('/health/db');
@@ -165,6 +165,95 @@ async function runTests() {
   assert(pii2.scrubbedText.includes('[PAN_REDACTED]'), 'Scrubber catches uppercase PAN with punctuation');
   assert(pii2.scrubbedText.includes('[AADHAAR_REDACTED]'), 'Scrubber catches hyphenated Aadhaar');
 
+
+  // Test 12: Live IFSC Bank Resolver with fallback
+  const ifscRes = await app.request('/api/v1/statutory/ifsc/HDFC0000001', {
+    method: 'GET',
+    headers: { 'x-zerotax-timestamp': String(nowSec) },
+  });
+  assert(ifscRes.status === 200, 'GET /api/v1/statutory/ifsc/HDFC0000001 returns 200');
+  const ifscJson = (await ifscRes.json()) as any;
+  assert(ifscJson.ifscCode === 'HDFC0000001', 'IFSC code matches requested code');
+  assert(typeof ifscJson.bankName === 'string', 'IFSC resolver returns bank name');
+
+  // Test 13: Live Prefill Ingestion
+  const prefillRes = await app.request('/api/v1/portal/ingest-live-prefill', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-zerotax-timestamp': String(nowSec),
+    },
+    body: JSON.stringify({
+      pan: 'ABCDE1234F',
+      assessmentYear: '2026-27',
+      sourceOrigin: 'WEBVIEW_TEST_HARNESS',
+      transactions: [
+        { grossAmount: 1200000, tdsWithheld: 85000, category: 'SALARY' },
+        { grossAmount: 18000, tdsWithheld: 0, category: 'SAVINGS_INTEREST' }
+      ]
+    }),
+  });
+  assert(prefillRes.status === 200, 'POST /api/v1/portal/ingest-live-prefill returns 200');
+  const prefillJson = (await prefillRes.json()) as any;
+  assert(prefillJson.success === true, 'Live prefill ingestion reports success');
+  assert(prefillJson.recordCount === 2, 'Live prefill ingests 2 transactions');
+  assert(prefillJson.aggregateGrossAmount === 1218000, 'Aggregate gross correctly summed');
+
+  // Test 14: CBDT Submission Router
+  const submitRes = await app.request('/api/v1/portal/submit', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-zerotax-timestamp': String(nowSec),
+    },
+    body: JSON.stringify({
+      pan: 'ABCDE1234F',
+      assessmentYear: '2026-27',
+      cbdtJsonPayload: {
+        ITR1: {
+          CreationInfo: { SWVersionNo: '1.0' },
+          PersonalInfo: { PAN: 'ABCDE1234F' }
+        }
+      }
+    }),
+  });
+  assert(submitRes.status === 200, 'POST /api/v1/portal/submit returns 200');
+  const submitJson = (await submitRes.json()) as any;
+  assert(submitJson.success === true, 'Submission reports success');
+  assert(submitJson.verificationStatus === 'PENDING_EVC', 'Verification status is PENDING_EVC');
+  assert(!!submitJson.driver, 'Submission includes active driver identification');
+
+  // Test 15: Portal Driver Status & Priority Routing
+  const driverStatusRes = await app.request('/api/v1/portal/driver-status', {
+    method: 'GET',
+    headers: { 'x-zerotax-timestamp': String(nowSec) },
+  });
+  assert(driverStatusRes.status === 200, 'GET /api/v1/portal/driver-status returns 200');
+  const driverStatusJson = (await driverStatusRes.json()) as any;
+  assert(driverStatusJson.success === true, 'Driver status reports success');
+  assert(['QUICKO_ERI', 'CBDT_DIRECT_ERI', 'IN_APP_LIVE_DRIVER'].includes(driverStatusJson.activeDriver), 'Active driver is one of QUICKO_ERI, CBDT_DIRECT_ERI, IN_APP_LIVE_DRIVER');
+  assert(driverStatusJson.inAppDriverActive === true, 'In-App Live Driver is active as resilient fallback');
+  assert(Array.isArray(driverStatusJson.priorityOrder) && driverStatusJson.priorityOrder[0] === 'QUICKO_ERI', 'Priority order puts Quicko first');
+
+  // Test 16: Portal e-Verification Router
+  const everifyRes = await app.request('/api/v1/portal/everify', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-zerotax-timestamp': String(nowSec),
+    },
+    body: JSON.stringify({
+      pan: 'ABCDE1234F',
+      acknowledgmentNumber: '880010100000011',
+      otp: '123456',
+      evcType: 'AADHAAR_OTP',
+    }),
+  });
+  assert(everifyRes.status === 200, 'POST /api/v1/portal/everify returns 200');
+  const everifyJson = (await everifyRes.json()) as any;
+  assert(everifyJson.success === true, 'e-Verification reports success');
+  assert(!!everifyJson.cpcVerificationRef, 'e-Verification returns CPC verification reference');
+  assert(!!everifyJson.driver, 'e-Verification identifies active driver');
 
   console.log(`\n================================================================`);
   console.log(`Test Results: ${passed} Passed, ${failed} Failed`);

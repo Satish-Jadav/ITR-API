@@ -9,39 +9,35 @@ import {
 } from '../security/vaptGuards.js';
 import { logger } from '../config/logger.js';
 import { queryDb } from '../config/supabase.js';
+import {
+  PortalDriverService,
+  ipOtpRequests,
+  devInMemorySessions,
+  devPanToTxnMap,
+} from '../services/portalDriverService.js';
+import { z } from 'zod';
 
 export const portalRoutes = new Hono();
 
-interface OtpSession {
-  txnId: string;
-  pan: string;
-  hashedOtp: string;
-  salt: string;
-  purpose: string;
-  attempts: number;
-  verified: boolean;
-  verificationToken: string | null;
-  cpcVerificationRef: string | null;
-  createdAt: number;
-  expiresAt: number;
-  lastRequestedAt: number;
-}
-
-// In-memory fallback map for offline unit testing / non-Postgres environments
-const devInMemorySessions = new Map<string, OtpSession>();
-const devPanToTxnMap = new Map<string, string>();
-const ipOtpRequests = new Map<string, { count: number; resetAt: number }>();
+/**
+ * 0. GET /api/v1/portal/driver-status
+ * Exposes current driver status, prioritization, and gateway capabilities.
+ * Priority: 1) QUICKO_ERI (Sandbox.co.in) -> 2) CBDT_DIRECT_ERI (Official ITD) -> 3) IN_APP_LIVE_DRIVER (Zero-Cost).
+ */
+portalRoutes.get('/driver-status', (c) => {
+  const status = PortalDriverService.getDriverStatus();
+  return c.json(status);
+});
 
 /**
  * 1. POST /api/v1/portal/otp/request
  * Dispatches a cryptographically secure 6-digit Aadhaar / ITD OTP.
+ * Prioritizes Quicko B2B ERI -> CBDT Direct IEC 2.0 -> Zero-Cost In-App Live Driver fallback.
  * Enforces a strict 60-second rate-limiting cooldown per PAN.
- * Persists session in PostgreSQL (portal_otp_verification_sessions) with distributed TTL.
  */
 portalRoutes.post('/otp/request', zValidator('json', PortalOtpRequestSchema), async (c) => {
   const body = c.req.valid('json');
   const pan = body.pan.toUpperCase();
-  const maskedPan = `${pan.slice(0, 2)}***${pan.slice(8)}`;
   const now = Date.now();
 
   // Enforce IP-level rate-limiting (max 10 OTP requests per 5 minutes per IP)
@@ -63,255 +59,58 @@ portalRoutes.post('/otp/request', zValidator('json', PortalOtpRequestSchema), as
     ipOtpRequests.set(clientIp, { count: 1, resetAt: now + 5 * 60 * 1000 });
   }
 
-  // Compute HMAC blind index for PII protection (VAPT Break #19 / P0-4)
-  const panBlindIndexHmac = crypto
-    .createHmac('sha256', env.ZEROTAX_PAN_BLIND_INDEX_PEPPER)
-    .update(pan)
-    .digest('hex');
-
-  // 1. Check 60-second cooldown in PostgreSQL (or in-memory fallback)
   try {
-    const existing = await queryDb(
-      `SELECT txn_id, last_requested_at, expires_at
-       FROM portal_otp_verification_sessions
-       WHERE (pan = $1 OR pan_blind_index_hmac = $2) AND expires_at > NOW()
-       ORDER BY last_requested_at DESC LIMIT 1`,
-      [pan, panBlindIndexHmac]
-    );
-
-    if (existing.length > 0) {
-      const lastReqMs = new Date(existing[0].last_requested_at).getTime();
-      const elapsedSec = Math.floor((now - lastReqMs) / 1000);
-      if (elapsedSec < 60) {
-        const remaining = 60 - elapsedSec;
-        return c.json(
-          {
-            success: false,
-            errorCode: 'RATE_LIMITED',
-            message: `Please wait ${remaining} seconds before requesting a new OTP.`,
-            cooldownSeconds: remaining,
-          },
-          429
-        );
-      }
-    }
+    const result = await PortalDriverService.requestPrefillOtp(pan, body.purpose, clientIp);
+    return c.json(result);
   } catch (err: any) {
-    // Graceful offline fallback
-    const existingTxnId = devPanToTxnMap.get(pan);
-    if (existingTxnId) {
-      const memSession = devInMemorySessions.get(existingTxnId);
-      if (memSession && memSession.expiresAt > now) {
-        const elapsedSec = Math.floor((now - memSession.lastRequestedAt) / 1000);
-        if (elapsedSec < 60) {
-          const remaining = 60 - elapsedSec;
-          return c.json(
-            {
-              success: false,
-              errorCode: 'RATE_LIMITED',
-              message: `Please wait ${remaining} seconds before requesting a new OTP.`,
-              cooldownSeconds: remaining,
-            },
-            429
-          );
-        }
-      }
+    if (err.statusCode === 429) {
+      return c.json(
+        {
+          success: false,
+          errorCode: 'RATE_LIMITED',
+          message: err.message,
+          cooldownSeconds: err.cooldownSeconds || 60,
+        },
+        429
+      );
     }
-  }
-
-  // Generate cryptographically secure 6-digit numeric OTP
-  const rawOtp = crypto.randomInt(100000, 999999).toString();
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hashedOtp = crypto.createHash('sha256').update(salt + rawOtp).digest('hex');
-
-  const txnId = crypto.randomUUID();
-  const expiresAt = now + 10 * 60 * 1000; // 10 minutes TTL
-  const expiresAtIso = new Date(expiresAt).toISOString();
-
-  // Persist session into PostgreSQL table portal_otp_verification_sessions
-  try {
-    await queryDb(
-      `INSERT INTO portal_otp_verification_sessions (
-         txn_id, pan, hashed_otp, salt, purpose, attempts, verified, client_ip, expires_at, last_requested_at
-       ) VALUES ($1::uuid, $2, $3, $4, $5, 0, FALSE, $6, $7, NOW())`,
-      [txnId, pan, hashedOtp, salt, body.purpose, clientIp, expiresAtIso]
+    logger.error('[PORTAL OTP REQUEST ERROR]', err);
+    return c.json(
+      {
+        success: false,
+        errorCode: 'OTP_REQUEST_FAILED',
+        message: err.message || 'Failed to dispatch portal OTP.',
+      },
+      err.statusCode || 500
     );
-  } catch (err: any) {
-    logger.warn('⚠️ portal_otp_verification_sessions DB insert failed, using fallback:', { error: err.message, txnId });
   }
-
-  // Also record in dev memory for synchronous test harness compatibility
-  const session: OtpSession = {
-    txnId,
-    pan,
-    hashedOtp,
-    salt,
-    purpose: body.purpose,
-    attempts: 0,
-    verified: false,
-    verificationToken: null,
-    cpcVerificationRef: null,
-    createdAt: now,
-    expiresAt,
-    lastRequestedAt: now,
-  };
-  devInMemorySessions.set(txnId, session);
-  devPanToTxnMap.set(pan, txnId);
-
-  const maskedMobile = `••••••${pan.slice(6, 10)}`;
-  logger.info(`[PORTAL OTP DISPATCH] Sent 6-digit OTP for PAN ${maskedPan} (Txn: ${txnId})`);
-
-  return c.json({
-    success: true,
-    txnId,
-    maskedMobile,
-    cooldownSeconds: 60,
-    expiresAtIso,
-    message: `6-digit OTP dispatched to Aadhaar-linked mobile (${maskedMobile}). Valid for 10 minutes.`,
-  });
 });
 
 /**
  * 2. POST /api/v1/portal/otp/verify
- * Validates the 6-digit OTP entered by the user against PostgreSQL.
- * Caps verification attempts to 3 to prevent brute force.
+ * Validates the 6-digit OTP entered by the user.
+ * Prioritizes Quicko B2B ERI -> CBDT Direct IEC 2.0 -> Zero-Cost In-App Live Driver fallback.
  */
 portalRoutes.post('/otp/verify', zValidator('json', PortalOtpVerifySchema), async (c) => {
   const body = c.req.valid('json');
   const pan = body.pan.toUpperCase();
   const txnId = body.txnId;
-  const now = Date.now();
 
-  let session: OtpSession | null = null;
-
-  // Retrieve session from PostgreSQL
   try {
-    const rows = await queryDb(
-      `SELECT txn_id, pan, hashed_otp, salt, purpose, attempts, verified, verification_token, cpc_verification_ref, expires_at
-       FROM portal_otp_verification_sessions
-       WHERE txn_id = $1::uuid`,
-      [txnId]
-    );
-
-    if (rows.length > 0) {
-      const r = rows[0];
-      session = {
-        txnId: r.txn_id,
-        pan: r.pan,
-        hashedOtp: r.hashed_otp,
-        salt: r.salt,
-        purpose: r.purpose,
-        attempts: Number(r.attempts || 0),
-        verified: Boolean(r.verified),
-        verificationToken: r.verification_token,
-        cpcVerificationRef: r.cpc_verification_ref,
-        createdAt: 0,
-        expiresAt: new Date(r.expires_at).getTime(),
-        lastRequestedAt: 0,
-      };
-    }
+    const result = await PortalDriverService.verifyPrefillOtp(pan, txnId, body.otp);
+    return c.json(result);
   } catch (err: any) {
-    session = devInMemorySessions.get(txnId) || null;
-  }
-
-  if (!session) {
-    session = devInMemorySessions.get(txnId) || null;
-  }
-
-  if (!session || session.pan !== pan) {
+    const statusCode = err.statusCode || 400;
     return c.json(
       {
         success: false,
-        errorCode: 'INVALID_SESSION',
-        message: 'OTP session expired or not found. Please request a new OTP.',
+        errorCode: err.errorCode || 'OTP_VERIFICATION_FAILED',
+        message: err.message || 'OTP verification failed.',
+        ...(err.attemptsRemaining !== undefined ? { attemptsRemaining: err.attemptsRemaining } : {}),
       },
-      404
+      statusCode
     );
   }
-
-  if (session.expiresAt < now) {
-    devInMemorySessions.delete(txnId);
-    devPanToTxnMap.delete(pan);
-    return c.json(
-      {
-        success: false,
-        errorCode: 'OTP_EXPIRED',
-        message: 'OTP has expired. Please request a new OTP.',
-      },
-      410
-    );
-  }
-
-  if (session.attempts >= 3) {
-    devInMemorySessions.delete(txnId);
-    devPanToTxnMap.delete(pan);
-    return c.json(
-      {
-        success: false,
-        errorCode: 'MAX_ATTEMPTS_EXCEEDED',
-        message: 'Maximum OTP verification attempts (3) exceeded. Please request a new OTP.',
-      },
-      429
-    );
-  }
-
-  session.attempts += 1;
-
-  // Update attempts in DB
-  try {
-    await queryDb(
-      `UPDATE portal_otp_verification_sessions SET attempts = attempts + 1 WHERE txn_id = $1::uuid`,
-      [txnId]
-    );
-  } catch {
-    // Ignore DB update error
-  }
-
-  // Validate entered OTP hash against stored SHA-256
-  const candidateHash = crypto.createHash('sha256').update(session.salt + body.otp).digest('hex');
-  if (candidateHash !== session.hashedOtp) {
-    const attemptsRemaining = 3 - session.attempts;
-    return c.json(
-      {
-        success: false,
-        errorCode: 'INVALID_OTP',
-        message: `Incorrect OTP. ${attemptsRemaining} attempt${attemptsRemaining === 1 ? '' : 's'} remaining.`,
-        attemptsRemaining,
-      },
-      400
-    );
-  }
-
-  // OTP is verified! Generate cryptographically signed verification attestation
-  const verificationToken = crypto.randomBytes(32).toString('hex');
-  const cpcVerificationRef = `CPC/EVC/2026-27/${crypto.randomInt(1000000, 9999999)}`;
-  const verifiedAt = new Date().toISOString();
-
-  session.verified = true;
-  session.verificationToken = verificationToken;
-  session.cpcVerificationRef = cpcVerificationRef;
-
-  // Persist verification in DB
-  try {
-    await queryDb(
-      `UPDATE portal_otp_verification_sessions
-       SET verified = TRUE, verification_token = $1, cpc_verification_ref = $2
-       WHERE txn_id = $3::uuid`,
-      [verificationToken, cpcVerificationRef, txnId]
-    );
-  } catch (err: any) {
-    logger.warn('Failed to update verified status in DB:', err.message);
-  }
-
-  logger.info(`[PORTAL OTP VERIFIED] Successfully verified OTP for PAN ${pan} (Ref: ${cpcVerificationRef})`);
-
-  return c.json({
-    success: true,
-    txnId,
-    verificationToken,
-    cpcVerificationRef,
-    verifiedAtIso: verifiedAt,
-    message: 'OTP verified successfully u/s 140A.',
-  });
 });
 
 /**
@@ -382,7 +181,6 @@ portalRoutes.post('/sync', zValidator('json', PortalSyncRequestSchema), async (c
   }
 
   // 100% Zero-Mock Handling:
-  // If client-bridge or ERI gateway pushed live transactions / snapshot:
   let transactions: any[] = [];
   let recordCount = 0;
   let aggregateGross = 0;
@@ -394,7 +192,6 @@ portalRoutes.post('/sync', zValidator('json', PortalSyncRequestSchema), async (c
     aggregateGross = body.aggregateGrossAmount ?? transactions.reduce((acc, t) => acc + (t.grossAmount || 0), 0);
     aggregateTds = body.aggregateTdsCredit ?? transactions.reduce((acc, t) => acc + (t.tdsWithheld || 0), 0);
 
-    // Save snapshot in DB (strictly encrypted payload, plaintext snapshot_json set to NULL - P0-4 / Break #19)
     const panBlindIndexHmac = crypto
       .createHmac('sha256', env.ZEROTAX_PAN_BLIND_INDEX_PEPPER)
       .update(pan)
@@ -421,7 +218,6 @@ portalRoutes.post('/sync', zValidator('json', PortalSyncRequestSchema), async (c
       logger.warn('Failed to persist portal snapshot to DB:', err.message);
     }
   } else {
-    // Check if an existing live snapshot was previously stored for this taxpayer
     try {
       const snapRows = await queryDb(
         `SELECT record_count, aggregate_gross_amount, aggregate_tds_credit, snapshot_json, synced_at
@@ -440,7 +236,6 @@ portalRoutes.post('/sync', zValidator('json', PortalSyncRequestSchema), async (c
           : snapRows[0].snapshot_json || [];
       }
     } catch {
-      // Offline fallback: return clean empty dataset with zero mock numbers
       transactions = [];
       recordCount = 0;
       aggregateGross = 0;
@@ -461,3 +256,172 @@ portalRoutes.post('/sync', zValidator('json', PortalSyncRequestSchema), async (c
     syncedAtIso: new Date().toISOString(),
   });
 });
+
+/**
+ * 4. POST /api/v1/portal/ingest-live-prefill
+ * Ingests live authenticated ITD Pre-fill JSON, AIS/TIS JSON & Form 26AS captured
+ * by the Android WebView bridge. Persists zero-knowledge encrypted snapshots with pan_blind_index_hmac.
+ */
+portalRoutes.post('/ingest-live-prefill', async (c) => {
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ success: false, errorCode: 'INVALID_JSON_BODY' }, 400);
+  }
+
+  const rawPan = (body.pan || '').trim().toUpperCase();
+  const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+  if (!PAN_REGEX.test(rawPan)) {
+    return c.json({ success: false, errorCode: 'INVALID_PAN_FORMAT' }, 400);
+  }
+
+  const ay = body.assessmentYear || '2026-27';
+  const sourceOrigin = body.sourceOrigin || 'WEBVIEW_LIVE_INTERCEPTOR';
+
+  const panBlindIndexHmac = crypto
+    .createHmac('sha256', env.ZEROTAX_PAN_BLIND_INDEX_PEPPER)
+    .update(rawPan)
+    .digest('hex');
+
+  let recordCount = Number(body.recordCount || 0);
+  let aggregateGross = Number(body.aggregateGrossAmount || 0);
+  let aggregateTds = Number(body.aggregateTdsCredit || 0);
+
+  if (Array.isArray(body.transactions) && body.transactions.length > 0) {
+    recordCount = body.transactions.length;
+    if (aggregateGross === 0) {
+      aggregateGross = body.transactions.reduce((acc: number, t: any) => acc + (t.grossAmount || 0), 0);
+    }
+    if (aggregateTds === 0) {
+      aggregateTds = body.transactions.reduce((acc: number, t: any) => acc + (t.tdsWithheld || t.tdsAmount || 0), 0);
+    }
+  }
+
+  try {
+    await queryDb(
+      `INSERT INTO portal_sync_snapshots (
+         pan, pan_blind_index_hmac, assessment_year, source_origin, record_count,
+         aggregate_gross_amount, aggregate_tds_credit, encrypted_snapshot_payload, snapshot_json, synced_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, NOW())`,
+      [
+        rawPan,
+        panBlindIndexHmac,
+        ay,
+        sourceOrigin,
+        recordCount,
+        aggregateGross,
+        aggregateTds,
+        body.encryptedPayloadBase64 || null,
+      ]
+    );
+  } catch (err: any) {
+    logger.warn('[PORTAL PREFILL INGEST] DB snapshot save warning:', err.message);
+  }
+
+  logger.info(`[PORTAL PREFILL INGEST] Ingested live prefill for PAN ${rawPan.slice(0, 2)}***${rawPan.slice(8)} AY ${ay} (${recordCount} records)`);
+
+  return c.json({
+    success: true,
+    pan: rawPan,
+    assessmentYear: ay,
+    recordCount,
+    aggregateGrossAmount: aggregateGross,
+    aggregateTdsCredit: aggregateTds,
+    ingestedAtIso: new Date().toISOString(),
+    message: 'Live ITD Pre-fill and tax credits persisted to encrypted vault snapshot.',
+  });
+});
+
+/**
+ * 5. POST /api/v1/portal/submit
+ * Direct ITR Submission Router. Prioritizes:
+ * 1) Quicko B2B ERI Gateway -> 2) Official CBDT IEC 2.0 Gateway -> 3) Zero-Cost In-App Live Driver.
+ */
+portalRoutes.post('/submit', async (c) => {
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ success: false, errorCode: 'INVALID_JSON_BODY' }, 400);
+  }
+
+  const pan = (body.pan || '').trim().toUpperCase();
+  const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+  if (!PAN_REGEX.test(pan)) {
+    return c.json({ success: false, errorCode: 'INVALID_PAN_FORMAT' }, 400);
+  }
+
+  const payloadStr = typeof body.cbdtJsonPayload === 'string'
+    ? body.cbdtJsonPayload
+    : JSON.stringify(body.cbdtJsonPayload || {});
+
+  let parsed: any;
+  try {
+    parsed = JSON.parse(payloadStr);
+    if (!parsed.ITR1 && !parsed.ITR2 && !parsed.ITR4 && !parsed.ITR) {
+      return c.json({ success: false, errorCode: 'MALFORMED_CBDT_SCHEMA', message: 'Missing root ITR element (ITR1/ITR2/ITR4)' }, 400);
+    }
+  } catch {
+    return c.json({ success: false, errorCode: 'INVALID_CBDT_JSON' }, 400);
+  }
+
+  const ay = body.assessmentYear || '2026-27';
+
+  try {
+    const result = await PortalDriverService.submitReturn(pan, ay, parsed, body.bankAccount);
+    return c.json(result);
+  } catch (err: any) {
+    logger.error('[PORTAL SUBMIT ERROR]', err);
+    return c.json(
+      {
+        success: false,
+        errorCode: 'SUBMISSION_FAILED',
+        message: err.message || 'Failed to submit ITR.',
+      },
+      500
+    );
+  }
+});
+
+/**
+ * 6. POST /api/v1/portal/everify
+ * Direct ITR e-Verification Router.
+ * Handles Aadhaar OTP / EVC verification across Quicko, CBDT Direct, and In-App driver.
+ */
+portalRoutes.post(
+  '/everify',
+  zValidator(
+    'json',
+    z.object({
+      pan: z.string().regex(/^[A-Z]{5}[0-9]{4}[A-Z]$/, 'Invalid PAN format'),
+      acknowledgmentNumber: z.string().min(5, 'Acknowledgment number required'),
+      otp: z.string().regex(/^[0-9]{6}$/, 'OTP must be exactly 6 digits'),
+      evcType: z.enum(['AADHAAR_OTP', 'NET_BANKING', 'BANK_ACCOUNT', 'DEMAT']).default('AADHAAR_OTP'),
+    })
+  ),
+  async (c) => {
+    const body = c.req.valid('json');
+    const pan = body.pan.toUpperCase();
+
+    try {
+      const result = await PortalDriverService.eVerifyReturn(
+        pan,
+        body.acknowledgmentNumber,
+        body.otp,
+        body.evcType
+      );
+      return c.json(result);
+    } catch (err: any) {
+      logger.error('[PORTAL EVERIFY ERROR]', err);
+      return c.json(
+        {
+          success: false,
+          errorCode: 'EVERIFY_FAILED',
+          message: err.message || 'e-Verification failed.',
+        },
+        500
+      );
+    }
+  }
+);

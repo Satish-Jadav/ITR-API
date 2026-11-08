@@ -1,3 +1,4 @@
+import { StatutoryService } from '../services/statutoryService.js';
 import { Hono } from 'hono';
 import { queryDb } from '../config/supabase.js';
 import { logger } from '../config/logger.js';
@@ -103,11 +104,20 @@ cronRoutes.all('/statutory-sync', async (c) => {
       `SELECT cii_index FROM statutory_cii_rates_master ORDER BY financial_year DESC LIMIT 1`
     );
 
+    // Live AMFI daily Mutual Fund NAVs and live SBI TTBR Forex sync
+    const [amfiSync, forexSync] = await Promise.all([
+      StatutoryService.syncAmfiNavs(),
+      StatutoryService.syncSbiTtbrRates(),
+    ]);
+
     return c.json({
       success: true,
       assessmentYear: '2026-27',
       activeMilestones: Number(milestones[0]?.cnt || 0),
       latestCiiIndex: Number(ciiRows[0]?.cii_index || 376),
+      amfiNavsParsed: amfiSync.totalParsed,
+      amfiNavsUpdated: amfiSync.updatedCount,
+      sbiTtbrCurrenciesSynced: forexSync.currenciesSynced,
       syncedAtIso,
     });
   } catch (err: any) {
