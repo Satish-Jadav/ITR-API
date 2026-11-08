@@ -62,6 +62,22 @@ const envSchema = z.object({
   GEMINI_API_KEY: z.string().optional(),
   CRON_SECRET: z.string().default('zerotax-cron-secret-dev-default'),
   AA_FIU_BASE_URL: z.string().url().optional(),
+  AA_CLIENT_ID: z.string().optional(),
+  AA_CLIENT_SECRET: z.string().optional(),
+  // Tier 1: Quicko / Sandbox.co.in B2B Tax API Gateway
+  QUICKO_API_KEY: z.string().optional(),
+  QUICKO_API_SECRET: z.string().optional(),
+  QUICKO_BASE_URL: z.string().url().default('https://api.sandbox.co.in'),
+  QUICKO_API_VERSION: z.string().default('2.0'),
+  SANDBOX_API_KEY: z.string().optional(),
+  SANDBOX_API_SECRET: z.string().optional(),
+
+  // Tier 2: Official CBDT IEC 2.0 Direct ERI Gateway (Future-Ready)
+  ITD_ERI_USER_ID: z.string().optional(),
+  ITD_ERI_PASSWORD: z.string().optional(),
+  ITD_ERI_BASE_URL: z.string().url().default('https://eportal.incometax.gov.in/iec/foservices/api'),
+  ITD_ERI_DSC_PRIVATE_KEY_PEM: z.string().optional(),
+  ITD_ERI_API_KEY: z.string().optional(),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;
