@@ -32,16 +32,19 @@ if (rawUrl) {
 
 const isLocal = !host || host.includes('localhost') || host === '127.0.0.1';
 const isVercel = Boolean(process.env.VERCEL || process.env.CI);
+const isExplicitDbPush = process.env.npm_lifecycle_event === 'db:push';
 
 console.log('🐘 ZeroTax DB Push / Schema Sync Diagnostic:');
 console.log(
   `   Host: ${host || 'NOT_SET'} | Port: ${port} | DB: ${database} | User: ${user} | HasPassword: ${Boolean(password)}`
 );
-console.log(`   Environment: ${process.env.NODE_ENV || 'development'} | Vercel: ${isVercel}`);
+console.log(
+  `   Environment: ${process.env.NODE_ENV || 'development'} | Vercel: ${isVercel} | ExplicitDbPush: ${isExplicitDbPush}`
+);
 
-if (isVercel && (isLocal || !host || host === 'NOT_SET')) {
-  console.log('⚠️ Running in Vercel build environment without a remote database connection configured.');
-  console.log('ℹ️ As database tables were already created in your Supabase/PostgreSQL project, skipping db:push to complete deployment.');
+// If running as part of build and no remote DB is configured or host is local without explicit push, skip safely
+if (!isExplicitDbPush && (isLocal || !host || host === 'NOT_SET')) {
+  console.log('ℹ️ Local or unconfigured database during build step. Skipping db:push to allow build to succeed.');
   process.exit(0);
 }
 
@@ -88,9 +91,15 @@ try {
     }
   }
 } catch (connErr) {
-  console.error('❌ Database connection check failed:', connErr.message);
-  if (isVercel) {
-    console.log('ℹ️ As database tables were already created, continuing Vercel build deployment.');
+  const errMsg = connErr.errors
+    ? connErr.errors.map((e) => e.message || e.code).join('; ')
+    : connErr.message || connErr.code || String(connErr);
+
+  console.error('❌ Database connection check failed:', errMsg);
+
+  if (!isExplicitDbPush) {
+    console.log('ℹ️ Build proceeding without database connection.');
+    process.exit(0);
   } else {
     process.exit(1);
   }
