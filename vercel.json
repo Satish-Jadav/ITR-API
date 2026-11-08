@@ -70,10 +70,6 @@
       "schedule": "0 2 * * *"
     },
     {
-      "path": "/api/v1/cron/portal-probe",
-      "schedule": "*/5 * * * *"
-    },
-    {
       "path": "/api/v1/cron/aa-periodic-pull",
       "schedule": "0 3 1 * *"
     },
