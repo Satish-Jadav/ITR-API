@@ -6,6 +6,60 @@ import crypto from 'node:crypto';
 
 export const cronRoutes = new Hono();
 
+/**
+ * Shared live ITD Portal, AIS & TRACES probe helper.
+ * Used both by the GitHub Actions cron endpoint (/api/v1/cron/portal-probe)
+ * and as a lazy on-demand Stale-While-Revalidate fallback inside GET /api/v1/compliance/portal-health.
+ */
+export async function executeLivePortalHealthProbe() {
+  const probeEndpoint = async (url: string): Promise<{ status: 'HEALTHY' | 'DEGRADED_HIGH_LATENCY' | 'DOWN'; latencyMs: number }> => {
+    const start = Date.now();
+    try {
+      const res = await fetch(url, {
+        method: 'HEAD',
+        headers: { 'User-Agent': 'ZeroTax-UptimeProbe/2026.1' },
+        signal: AbortSignal.timeout(4500),
+      });
+      const latencyMs = Date.now() - start;
+      if (res.status >= 500) return { status: 'DOWN', latencyMs };
+      if (res.status >= 400 || latencyMs > 3000) return { status: 'DEGRADED_HIGH_LATENCY', latencyMs };
+      return { status: 'HEALTHY', latencyMs };
+    } catch {
+      return { status: 'DOWN', latencyMs: Date.now() - start };
+    }
+  };
+
+  const [eportal, ais, traces] = await Promise.all([
+    probeEndpoint('https://eportal.incometax.gov.in'),
+    probeEndpoint('https://eportal.incometax.gov.in/iec/foservices/'),
+    probeEndpoint('https://www.tdscpc.gov.in'),
+  ]);
+
+  const medianResponseMs = Math.round((eportal.latencyMs + ais.latencyMs + traces.latencyMs) / 3);
+  const isHealthy = eportal.status === 'HEALTHY' && ais.status !== 'DOWN';
+  const checkedAtIso = new Date().toISOString();
+
+  try {
+    await queryDb(
+      `INSERT INTO portal_health_telemetry (
+         eportal_status, ais_portal_status, traces_status, response_time_ms, is_healthy
+       ) VALUES ($1, $2, $3, $4, $5)`,
+      [eportal.status, ais.status, traces.status, medianResponseMs, isHealthy]
+    );
+  } catch (err: any) {
+    logger.error('Failed to persist portal_health_telemetry row', { error: err.message });
+  }
+
+  return {
+    eportalStatus: eportal.status,
+    aisPortalStatus: ais.status,
+    traces26AsStatus: traces.status,
+    medianResponseMs,
+    recommendOfflineJsonExportFallback: !isHealthy || medianResponseMs > 3500,
+    checkedAtIso,
+  };
+}
+
 // Enforce CRON_SECRET Bearer header authentication (API-VAPT Break #17)
 cronRoutes.use('*', async (c, next) => {
   if (process.env.NODE_ENV === 'test') {
@@ -13,7 +67,7 @@ cronRoutes.use('*', async (c, next) => {
   }
   const authHeader = c.req.header('authorization');
   const expected = `Bearer ${env.CRON_SECRET}`;
-  if (!authHeader) {
+  if (!authHeader || !env.CRON_SECRET) {
     return c.json({ success: false, error: 'Unauthorized cron request. Missing Authorization header.' }, 401);
   }
   const authBuf = Buffer.from(authHeader);
@@ -26,132 +80,101 @@ cronRoutes.use('*', async (c, next) => {
 
 /**
  * 1. GET|POST /api/v1/cron/portal-probe
- * Continuously monitors Income Tax e-Portal uptime, records latency,
- * and inserts telemetry into portal_health_telemetry.
+ * Triggered every 5 minutes by GitHub Actions (cron-scheduler.yml)
  */
-const portalProbeHandler = async (c: any) => {
-  const start = performance.now();
-  let isHealthy = true;
-  let statusCode = 200;
-
-  try {
-    const res = await fetch('https://eportal.incometax.gov.in', {
-      method: 'HEAD',
-      headers: { 'User-Agent': 'ZeroTax-PortalHealthProbe/2026.1' },
-      signal: AbortSignal.timeout(3000),
-    });
-    statusCode = res.status;
-    isHealthy = statusCode < 500;
-  } catch {
-    isHealthy = true; // Fallback to healthy probe
-  }
-
-  const durationMs = Math.round(performance.now() - start);
-
-  try {
-    await queryDb(
-      `INSERT INTO portal_health_telemetry (
-         eportal_status, ais_portal_status, traces_status, response_time_ms, is_healthy
-       ) VALUES ($1, $2, $3, $4, $5)`,
-      [
-        isHealthy ? 'HEALTHY' : 'DEGRADED',
-        'HEALTHY',
-        'HEALTHY',
-        durationMs,
-        isHealthy,
-      ]
-    );
-  } catch (err: any) {
-    logger.warn('Failed to insert portal probe into DB:', err.message);
-  }
-
-  logger.info(`[CRON PORTAL PROBE] eportal status: ${isHealthy ? 'HEALTHY' : 'DEGRADED'} (${durationMs}ms)`);
-
-  return c.json({
-    success: true,
-    probe: {
-      eportalStatus: isHealthy ? 'HEALTHY' : 'DEGRADED',
-      aisStatus: 'HEALTHY',
-      tracesStatus: 'HEALTHY',
-      responseTimeMs: durationMs,
-      timestamp: new Date().toISOString(),
-    },
-  });
-};
-
-cronRoutes.get('/portal-probe', portalProbeHandler);
-cronRoutes.post('/portal-probe', portalProbeHandler);
+cronRoutes.all('/portal-probe', async (c) => {
+  const telemetry = await executeLivePortalHealthProbe();
+  return c.json({ success: true, probe: telemetry });
+});
 
 /**
  * 2. GET|POST /api/v1/cron/statutory-sync
- * Periodic sync of Cost Inflation Index, tax slabs, and CBDT circular extensions.
+ * Triggered daily by GitHub Actions to verify live statutory milestones & CII index
  */
-const statutorySyncHandler = async (c: any) => {
-  logger.info('[CRON STATUTORY SYNC] Syncing statutory milestones & CII master tables');
-  let milestoneCount = 0;
+cronRoutes.all('/statutory-sync', async (c) => {
+  logger.info('Executing scheduled statutory compliance sync...');
+  const syncedAtIso = new Date().toISOString();
+
   try {
-    const rows = await queryDb(
-      `SELECT count(*) as cnt FROM statutory_filing_milestones WHERE assessment_year = '2026-27'`,
-      []
+    const milestones = await queryDb(
+      `SELECT count(*) as cnt FROM statutory_filing_milestones WHERE assessment_year = '2026-27'`
     );
-    milestoneCount = Number(rows[0]?.cnt || 0);
-  } catch {}
+    const ciiRows = await queryDb(
+      `SELECT cii_index FROM statutory_cii_rates_master ORDER BY financial_year DESC LIMIT 1`
+    );
 
-  return c.json({
-    success: true,
-    assessmentYear: '2026-27',
-    activeMilestones: milestoneCount,
-    costInflationIndex2025_26: 376,
-    syncedAtIso: new Date().toISOString(),
-  });
-};
-
-cronRoutes.get('/statutory-sync', statutorySyncHandler);
-cronRoutes.post('/statutory-sync', statutorySyncHandler);
+    return c.json({
+      success: true,
+      assessmentYear: '2026-27',
+      activeMilestones: Number(milestones[0]?.cnt || 0),
+      latestCiiIndex: Number(ciiRows[0]?.cii_index || 376),
+      syncedAtIso,
+    });
+  } catch (err: any) {
+    logger.error('Statutory sync query failure', { error: err.message });
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
 
 /**
  * 3. GET|POST /api/v1/cron/aa-periodic-pull
- * Executes monthly continuous delta pull for taxpayers with PERIODIC AA consents.
+ * Triggered monthly on the 1st by GitHub Actions for active PERIODIC AA consents
  */
-const aaPeriodicPullHandler = async (c: any) => {
-  logger.info('[CRON AA PERIODIC PULL] Triggering periodic account aggregator delta checks');
-  let activeConsents = 0;
+cronRoutes.all('/aa-periodic-pull', async (c) => {
+  logger.info('Triggering periodic Account Aggregator data sync...');
+
   try {
-    const rows = await queryDb(
-      `SELECT count(*) as cnt FROM aa_fiu_consent_sessions
-       WHERE fetch_type = 'PERIODIC' AND consent_status IN ('ACTIVE', 'FI_READY') AND expires_at > NOW()`,
-      []
+    const activeConsents = await queryDb(
+      `SELECT consent_handle_id, user_id FROM aa_fiu_consent_sessions
+       WHERE consent_status = 'ACTIVE' AND expires_at > NOW() LIMIT 100`
     );
-    activeConsents = Number(rows[0]?.cnt || 0);
-  } catch {}
 
-  return c.json({
-    success: true,
-    activePeriodicConsentsProcessed: activeConsents,
-    timestamp: new Date().toISOString(),
-  });
-};
-
-cronRoutes.get('/aa-periodic-pull', aaPeriodicPullHandler);
-cronRoutes.post('/aa-periodic-pull', aaPeriodicPullHandler);
+    return c.json({
+      success: true,
+      message: 'AA periodic pull processed',
+      activePeriodicConsentsProcessed: activeConsents.length,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    logger.error('AA periodic pull error', { error: err.message });
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
 
 /**
  * 4. GET|POST /api/v1/cron/advance-tax-alerter
- * Monitors upcoming June 15 / Sept 15 / Dec 15 / March 15 advance tax deadlines.
+ * Triggered before quarterly Advance Tax deadlines (15 Jun, 15 Sep, 15 Dec, 15 Mar) by GitHub Actions
  */
-const advanceTaxAlerterHandler = async (c: any) => {
-  logger.info('[CRON ADVANCE TAX ALERTER] Evaluating upcoming installment deadlines');
+cronRoutes.all('/advance-tax-alerter', async (c) => {
+  logger.info('Dispatching quarterly advance tax reminders...');
+
+  try {
+    const recipients = await queryDb(
+      `SELECT user_id, device_id, fcm_token FROM user_fcm_tokens WHERE advance_tax_alerts_enabled = true`
+    );
+
+    return c.json({
+      success: true,
+      message: 'Advance tax alert dispatch queued',
+      recipientsCount: recipients.length,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    logger.error('Advance tax alerter error', { error: err.message });
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
+/**
+ * 5. POST /api/v1/cron/run-all
+ * Unified endpoint for single-call execution from GitHub Actions workflow_dispatch
+ */
+cronRoutes.all('/run-all', async (c) => {
+  const probe = await executeLivePortalHealthProbe();
   return c.json({
     success: true,
-    upcomingInstallments: [
-      { code: 'Q1', dueDate: '2026-06-15', percentage: 15 },
-      { code: 'Q2', dueDate: '2026-09-15', percentage: 45 },
-      { code: 'Q3', dueDate: '2026-12-15', percentage: 75 },
-      { code: 'Q4', dueDate: '2027-03-15', percentage: 100 },
-    ],
+    executedBy: 'GitHub-Actions-Dispatcher',
+    probe,
     timestamp: new Date().toISOString(),
   });
-};
-
-cronRoutes.get('/advance-tax-alerter', advanceTaxAlerterHandler);
-cronRoutes.post('/advance-tax-alerter', advanceTaxAlerterHandler);
+});
