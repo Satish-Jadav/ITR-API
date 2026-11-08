@@ -12,7 +12,7 @@ export const complianceRoutes = new Hono();
  * 1. GET /api/v1/compliance/portal-health (100% Live Telemetry + Lazy TTL Re-Probe)
  * Reads the latest row from portal_health_telemetry (populated by GitHub Actions cron).
  * If no row exists or the latest row is older than 5 minutes, automatically triggers a live
- * probe on-demand so the APK always receives 100% real-time portal latency with zero mock data!
+ * probe on-demand so the APK always receives 100% real-time portal latency with zero mock data.
  */
 complianceRoutes.get('/portal-health', async (c) => {
   try {
@@ -46,57 +46,76 @@ complianceRoutes.get('/portal-health', async (c) => {
 
 /**
  * 2. POST /api/v1/compliance/ca-share/create (Authenticated)
+ * Matches CaShareCreateSchema: { aesGcmIvHex, encryptedDossierBlobBase64, maxViews, durationHours }
+ * and ca_shared_review_links table in 20261105000000_zerotax_init.sql
  */
 complianceRoutes.post('/ca-share/create', authGuard, zValidator('json', CaShareCreateSchema), async (c) => {
   const user = getCurrentUser(c);
   const body = c.req.valid('json');
-  const shareToken = crypto.randomBytes(24).toString('hex');
+  const shareToken = crypto.randomBytes(32).toString('hex');
   const tokenHash = crypto.createHash('sha256').update(shareToken).digest('hex');
-  const expiresAt = new Date(Date.now() + (body.validDays || 7) * 86400000);
+  const expiresAt = new Date(Date.now() + body.durationHours * 3600_000);
 
   try {
     await queryDb(
-      `INSERT INTO ca_shared_records (user_id, ca_email, share_token, scope, expires_at)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [user.userId, body.caEmail, tokenHash, body.scope || 'READ_ONLY', expiresAt]
+      `INSERT INTO ca_shared_review_links (
+         user_id, share_token_sha256, encrypted_dossier_blob_base64, aes_gcm_iv_hex, max_views, expires_at
+       ) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        user.userId,
+        tokenHash,
+        body.encryptedDossierBlobBase64,
+        body.aesGcmIvHex,
+        body.maxViews,
+        expiresAt.toISOString(),
+      ]
     );
 
-    return c.json({
-      success: true,
-      shareToken,
-      shareUrl: `https://zerotax.in/ca-portal/access#token=${shareToken}`,
-      expiresAt: expiresAt.toISOString(),
-    });
+    return c.json(
+      {
+        status: 'CA_SHARE_CREATED',
+        shareToken,
+        shareUrl: `https://zerotax.in/ca-review?token=${shareToken}`,
+        maxViews: body.maxViews,
+        expiresAtIso: expiresAt.toISOString(),
+      },
+      201
+    );
   } catch (err: any) {
     return c.json({ success: false, error: 'Failed to generate CA share token: ' + err.message }, 500);
   }
 });
 
 /**
- * 3. GET /api/v1/compliance/ca-share/view (CA View via Token)
+ * 3. GET /api/v1/compliance/ca-share/:token (CA View via Ephemeral Token)
  */
-complianceRoutes.get('/ca-share/view', async (c) => {
-  const token = c.req.query('token');
-  if (!token) {
-    return c.json({ success: false, error: 'Missing share token' }, 400);
-  }
-  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+complianceRoutes.get('/ca-share/:token', async (c) => {
+  const rawToken = c.req.param('token');
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
 
   try {
-    const shares = await queryDb(
-      `SELECT s.*, u.full_name, u.pan_masked FROM ca_shared_records s
-       JOIN users u ON s.user_id = u.id
-       WHERE s.share_token = $1 AND s.expires_at > NOW()`,
+    const rows = await queryDb(
+      `UPDATE ca_shared_review_links
+       SET current_views = current_views + 1
+       WHERE share_token_sha256 = $1
+         AND is_revoked = FALSE
+         AND expires_at > NOW()
+         AND current_views < max_views
+       RETURNING share_id, encrypted_dossier_blob_base64, aes_gcm_iv_hex, current_views, max_views, expires_at`,
       [tokenHash]
     );
 
-    if (!shares.length) {
-      return c.json({ success: false, error: 'Invalid or expired share token' }, 403);
+    if (!rows.length) {
+      return c.json({ error: 'CA_SHARE_EXPIRED_OR_MAX_VIEWS_REACHED' }, 404);
     }
 
     return c.json({
-      success: true,
-      record: shares[0],
+      shareId: rows[0].share_id,
+      encryptedDossierBlobBase64: rows[0].encrypted_dossier_blob_base64,
+      aesGcmIvHex: rows[0].aes_gcm_iv_hex,
+      currentViews: rows[0].current_views,
+      maxViews: rows[0].max_views,
+      expiresAtIso: rows[0].expires_at,
     });
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500);
@@ -105,6 +124,8 @@ complianceRoutes.get('/ca-share/view', async (c) => {
 
 /**
  * 4. POST /api/v1/compliance/register-fcm (Register Push Device Token)
+ * Matches FcmRegisterSchema: { deviceId, fcmToken, preferredLocale, advanceTaxAlertsEnabled }
+ * and fcm_device_registrations table in 20261105000000_zerotax_init.sql
  */
 complianceRoutes.post('/register-fcm', authGuard, zValidator('json', FcmRegisterSchema), async (c) => {
   const user = getCurrentUser(c);
@@ -112,19 +133,20 @@ complianceRoutes.post('/register-fcm', authGuard, zValidator('json', FcmRegister
 
   try {
     await queryDb(
-      `INSERT INTO user_fcm_tokens (user_id, device_id, fcm_token, platform, statutory_alerts_enabled, advance_tax_alerts_enabled)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (user_id, device_id) DO UPDATE SET
-         fcm_token = EXCLUDED.fcm_token,
-         statutory_alerts_enabled = EXCLUDED.statutory_alerts_enabled,
+      `INSERT INTO fcm_device_registrations (
+         device_id, user_id, fcm_token_encrypted, preferred_locale, advance_tax_alerts_enabled, updated_at
+       ) VALUES ($1, $2, $3, $4, $5, NOW())
+       ON CONFLICT (device_id) DO UPDATE SET
+         user_id = EXCLUDED.user_id,
+         fcm_token_encrypted = EXCLUDED.fcm_token_encrypted,
+         preferred_locale = EXCLUDED.preferred_locale,
          advance_tax_alerts_enabled = EXCLUDED.advance_tax_alerts_enabled,
          updated_at = NOW()`,
       [
-        user.userId,
         body.deviceId,
-        body.fcmToken,
-        body.platform,
-        body.statutoryAlertsEnabled,
+        user.userId,
+        Buffer.from(body.fcmToken, 'utf8'),
+        body.preferredLocale,
         body.advanceTaxAlertsEnabled,
       ]
     );
@@ -190,15 +212,15 @@ complianceRoutes.get('/filing-speed-benchmark', async (c) => {
     );
 
     const totalFilings = Number(rows[0]?.total_filings || 0);
-    const p50 = rows[0]?.p50_seconds !== null ? Number(rows[0].p50_seconds) : null;
-    const p95 = rows[0]?.p95_seconds !== null ? Number(rows[0].p95_seconds) : null;
+    const p50 = rows[0]?.p50_seconds !== null && rows[0]?.p50_seconds !== undefined ? Number(rows[0].p50_seconds) : 0;
+    const p95 = rows[0]?.p95_seconds !== null && rows[0]?.p95_seconds !== undefined ? Number(rows[0].p95_seconds) : 0;
 
     return c.json({
       assessmentYear: ay,
       totalFilingsTracked: totalFilings,
       p50DurationSeconds: p50,
       p95DurationSeconds: p95,
-      expressClaimVerified: p50 !== null && p50 <= 90.0,
+      expressClaimVerified: totalFilings > 0 && p50 <= 90.0,
       benchmarkSource: 'ZeroTax Production Telemetry Engine (Live DB)',
     });
   } catch (err: any) {
