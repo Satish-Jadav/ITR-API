@@ -13,7 +13,6 @@ import {
   PortalDriverService,
   ipOtpRequests,
   devInMemorySessions,
-  devPanToTxnMap,
 } from '../services/portalDriverService.js';
 import { z } from 'zod';
 
