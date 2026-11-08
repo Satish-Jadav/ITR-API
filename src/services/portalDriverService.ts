@@ -604,7 +604,7 @@ export class PortalDriverService {
     pan: string,
     ay: string,
     cbdtJson: any,
-    bankAccount?: any
+    _bankAccount?: any
   ): Promise<{
     success: boolean;
     driver: PortalDriverType;
