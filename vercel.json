@@ -63,19 +63,5 @@
         }
       ]
     }
-  ],
-  "crons": [
-    {
-      "path": "/api/v1/cron/statutory-sync",
-      "schedule": "0 2 * * *"
-    },
-    {
-      "path": "/api/v1/cron/aa-periodic-pull",
-      "schedule": "0 3 1 * *"
-    },
-    {
-      "path": "/api/v1/cron/advance-tax-alerter",
-      "schedule": "0 4 1,10,14 3,6,9,12 *"
-    }
   ]
 }
