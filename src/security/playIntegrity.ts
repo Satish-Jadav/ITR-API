@@ -10,11 +10,15 @@ export interface PlayIntegrityVerdict {
 
 export async function verifyPlayIntegrityToken(
   token: string,
-  expectedNonce: string
+  expectedNonce: string,
+  maxAgeMs: number = 120_000
 ): Promise<PlayIntegrityVerdict> {
   const isDevModeAllowed = env.NODE_ENV !== 'production' && env.ALLOW_PLAY_INTEGRITY_DEV_BYPASS;
 
-  // 1. Check for Development / Emulator bypass mode (Strictly forbidden in production)
+  // 1. Check for Development / Emulator bypass mode (Strictly forbidden in production - VAPT Break #4)
+  if (env.NODE_ENV === 'production' && token.startsWith('dev_bypass_')) {
+    return { isValid: false, verdictLevel: 'BASIC', error: 'PLAY_INTEGRITY_DEV_BYPASS_FORBIDDEN_IN_PRODUCTION' };
+  }
   if (isDevModeAllowed && token.startsWith('dev_bypass_')) {
     return {
       isValid: true,
@@ -44,7 +48,7 @@ export async function verifyPlayIntegrityToken(
     const client = await auth.getClient();
     const res = await client.request<{
       tokenPayloadExternal?: {
-        requestDetails?: { nonce?: string; requestPackageName?: string };
+        requestDetails?: { nonce?: string; requestPackageName?: string; timestampMillis?: string };
         appIntegrity?: { appRecognitionVerdict?: string; certificateSha256Digest?: string[] };
         deviceIntegrity?: { deviceRecognitionVerdict?: string[] };
       };
@@ -62,6 +66,15 @@ export async function verifyPlayIntegrityToken(
     // Verify Nonce
     if (payload.requestDetails?.nonce !== expectedNonce) {
       return { isValid: false, verdictLevel: 'BASIC', error: 'PLAY_INTEGRITY_NONCE_MISMATCH' };
+    }
+
+    // Verify Token Age (< 120s anti-replay - VAPT Break #4)
+    if (payload.requestDetails?.timestampMillis) {
+      const tokenTime = parseInt(payload.requestDetails.timestampMillis, 10);
+      const ageMs = Date.now() - tokenTime;
+      if (ageMs > maxAgeMs) {
+        return { isValid: false, verdictLevel: 'BASIC', error: 'PLAY_INTEGRITY_TOKEN_EXPIRED_OR_REPLAYED' };
+      }
     }
 
     // Verify Package Name

@@ -306,6 +306,7 @@ export const portalOtpVerificationSessions = pgTable(
   {
     txnId: uuid('txn_id').primaryKey(),
     pan: varchar('pan', { length: 10 }).notNull(),
+    panBlindIndexHmac: varchar('pan_blind_index_hmac', { length: 64 }),
     hashedOtp: varchar('hashed_otp', { length: 64 }).notNull(),
     salt: varchar('salt', { length: 32 }).notNull(),
     purpose: varchar('purpose', { length: 32 }).default('LOGIN_PORTAL').notNull(),
@@ -333,6 +334,7 @@ export const portalSyncSnapshots = pgTable(
     snapshotId: uuid('snapshot_id').defaultRandom().primaryKey(),
     userId: uuid('user_id').references(() => users.userId, { onDelete: 'cascade' }),
     pan: varchar('pan', { length: 10 }).notNull(),
+    panBlindIndexHmac: varchar('pan_blind_index_hmac', { length: 64 }),
     assessmentYear: varchar('assessment_year', { length: 7 }).default('2026-27').notNull(),
     sourceOrigin: varchar('source_origin', { length: 32 }).default('ITD_DIRECT_PORTAL').notNull(),
     recordCount: integer('record_count').default(0).notNull(),

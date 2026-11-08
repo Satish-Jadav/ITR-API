@@ -1,3 +1,4 @@
+import { env } from '../config/env.js';
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import crypto from 'node:crypto';
@@ -62,14 +63,20 @@ portalRoutes.post('/otp/request', zValidator('json', PortalOtpRequestSchema), as
     ipOtpRequests.set(clientIp, { count: 1, resetAt: now + 5 * 60 * 1000 });
   }
 
+  // Compute HMAC blind index for PII protection (VAPT Break #19 / P0-4)
+  const panBlindIndexHmac = crypto
+    .createHmac('sha256', env.ZEROTAX_PAN_BLIND_INDEX_PEPPER)
+    .update(pan)
+    .digest('hex');
+
   // 1. Check 60-second cooldown in PostgreSQL (or in-memory fallback)
   try {
     const existing = await queryDb(
       `SELECT txn_id, last_requested_at, expires_at
        FROM portal_otp_verification_sessions
-       WHERE pan = $1 AND expires_at > NOW()
+       WHERE (pan = $1 OR pan_blind_index_hmac = $2) AND expires_at > NOW()
        ORDER BY last_requested_at DESC LIMIT 1`,
-      [pan]
+      [pan, panBlindIndexHmac]
     );
 
     if (existing.length > 0) {
@@ -387,22 +394,27 @@ portalRoutes.post('/sync', zValidator('json', PortalSyncRequestSchema), async (c
     aggregateGross = body.aggregateGrossAmount ?? transactions.reduce((acc, t) => acc + (t.grossAmount || 0), 0);
     aggregateTds = body.aggregateTdsCredit ?? transactions.reduce((acc, t) => acc + (t.tdsWithheld || 0), 0);
 
-    // Save snapshot in DB
+    // Save snapshot in DB (strictly encrypted payload, plaintext snapshot_json set to NULL - P0-4 / Break #19)
+    const panBlindIndexHmac = crypto
+      .createHmac('sha256', env.ZEROTAX_PAN_BLIND_INDEX_PEPPER)
+      .update(pan)
+      .digest('hex');
+
     try {
       await queryDb(
         `INSERT INTO portal_sync_snapshots (
-           pan, assessment_year, source_origin, record_count, aggregate_gross_amount, aggregate_tds_credit,
+           pan, pan_blind_index_hmac, assessment_year, source_origin, record_count, aggregate_gross_amount, aggregate_tds_credit,
            encrypted_snapshot_payload, snapshot_json, synced_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, NOW())`,
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, NOW())`,
         [
           pan,
+          panBlindIndexHmac,
           body.assessmentYear,
           body.sourceOrigin || 'CLIENT_ENCRYPTED_BRIDGE',
           recordCount,
           aggregateGross,
           aggregateTds,
           body.encryptedSnapshotPayloadBase64 || null,
-          JSON.stringify(transactions),
         ]
       );
     } catch (err: any) {
