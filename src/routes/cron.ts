@@ -150,7 +150,7 @@ cronRoutes.all('/advance-tax-alerter', async (c) => {
 
   try {
     const recipients = await queryDb(
-      `SELECT user_id, device_id, fcm_token FROM user_fcm_tokens WHERE advance_tax_alerts_enabled = true`
+      `SELECT user_id, device_id, preferred_locale FROM fcm_device_registrations WHERE advance_tax_alerts_enabled = true`
     );
 
     return c.json({
