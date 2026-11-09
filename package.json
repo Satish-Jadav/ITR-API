@@ -8,8 +8,8 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "dev": "tsx watch src/devServer.ts",
-    "build": "node scripts/db-push.js && npx tsc --noEmit",
+    "dev": "node init && tsx watch src/devServer.ts",
+    "build": "node init && node scripts/db-push.js && npx tsc --noEmit",
     "vercel-build": "node scripts/db-push.js && npx tsc --noEmit",
     "lint": "tsc --noEmit",
     "generate-keys": "node scripts/generate-keys.js",
@@ -29,6 +29,7 @@
     "google-auth-library": "^9.14.2",
     "hono": "^4.6.9",
     "jose": "^5.9.6",
+    "node-fetch": "^3.3.2",
     "pg": "^8.13.1",
     "pino": "^9.5.0",
     "zod": "^3.23.8"
