@@ -4,9 +4,6 @@ node_modules/
 .pnp.js
 
 # Environment Variables
-.env
-.env.local
-.env.production
 .env.*.local
 
 # Vercel
@@ -27,3 +24,4 @@ yarn-error.log*
 # OS Files
 .DS_Store
 Thumbs.db
+config.bat
