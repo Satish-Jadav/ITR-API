@@ -16,6 +16,8 @@ import {
 } from '../services/portalDriverService.js';
 import { z } from 'zod';
 
+const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+
 export const portalRoutes = new Hono();
 
 /**
@@ -26,6 +28,28 @@ export const portalRoutes = new Hono();
 portalRoutes.get('/driver-status', (c) => {
   const status = PortalDriverService.getDriverStatus();
   return c.json(status);
+});
+
+/**
+ * 0.1 GET /api/v1/portal/pan/:pan/verify
+ * Real-time live PAN verification via Quicko / Sandbox.co.in NSDL/CBDT bridge.
+ * Returns true taxpayer legal name, validity status, and entity category.
+ */
+portalRoutes.get('/pan/:pan/verify', async (c) => {
+  const pan = (c.req.param('pan') || '').trim().toUpperCase();
+  if (!PAN_REGEX.test(pan)) {
+    return c.json(
+      {
+        success: false,
+        errorCode: 'INVALID_PAN_FORMAT',
+        message: 'PAN must be 10 characters (e.g. 5 letters, 4 digits, 1 letter)',
+      },
+      400
+    );
+  }
+
+  const result = await PortalDriverService.verifyPanLive(pan);
+  return c.json(result, result.success ? 200 : 400);
 });
 
 /**

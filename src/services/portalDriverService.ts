@@ -156,6 +156,74 @@ export class PortalDriverService {
   }
 
   /**
+   * 100% Live PAN Verification via Quicko / Sandbox B2B Gateway.
+   * Directly queries the CBDT/NSDL database to retrieve the taxpayer's legal name, status, and entity type.
+   */
+  public static async verifyPanLive(pan: string): Promise<{
+    success: boolean;
+    pan: string;
+    fullName?: string;
+    status?: string;
+    category?: string;
+    isLive: boolean;
+    message: string;
+  }> {
+    const quickoKey = env.QUICKO_API_KEY || env.SANDBOX_API_KEY;
+    if (!quickoKey) {
+      return {
+        success: false,
+        pan,
+        isLive: false,
+        message: 'Quicko/Sandbox API keys are not configured in environment.',
+      };
+    }
+
+    try {
+      const token = await this.getQuickoAccessToken();
+      const headers: Record<string, string> = {
+        'x-api-key': quickoKey,
+        'x-api-version': '1.0.0',
+      };
+      if (token) headers['Authorization'] = token;
+
+      const url = `${env.QUICKO_BASE_URL}/pans/${encodeURIComponent(pan)}/verify?consent=Y&reason=ITR%20Verification`;
+      const res = await fetch(url, { method: 'GET', headers });
+
+      if (res.ok) {
+        const body: any = await res.json();
+        const data = body.data || {};
+        logger.info(`[LIVE PAN VERIFY] Live CBDT/NSDL PAN verification successful for ${pan}: ${data.full_name}`);
+        return {
+          success: true,
+          pan,
+          fullName: data.full_name || '',
+          status: data.status || 'VALID',
+          category: data.category || 'individual',
+          isLive: true,
+          message: 'PAN verified live against CBDT / NSDL records.',
+        };
+      } else {
+        const errText = await res.text();
+        logger.warn(`[LIVE PAN VERIFY] Sandbox returned ${res.status}: ${errText}`);
+        return {
+          success: false,
+          pan,
+          isLive: true,
+          message: `Government portal returned status ${res.status}: Unable to verify PAN.`,
+        };
+      }
+    } catch (err: any) {
+      logger.error(`[LIVE PAN VERIFY] Network error during PAN verification: ${err.message}`);
+      return {
+        success: false,
+        pan,
+        isLive: false,
+        message: `Network error verifying PAN: ${err.message}`,
+      };
+    }
+  }
+
+  /**
    * Request Aadhaar / ITD consent OTP:
    * Prioritizes Quicko -> CBDT Direct -> Zero-Cost In-App Live Driver fallback.
    */
