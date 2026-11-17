@@ -91,6 +91,14 @@ export class StatutoryService {
     };
   }
 
+  static async lookupIsins(isinCodes: string[]) {
+    return this.getIsinGrandfatheringFmvs(isinCodes);
+  }
+
+  static async lookupIfsc(ifsc: string) {
+    return this.getIfscDetails(ifsc);
+  }
+
   /**
    * Master Jan 31, 2018 Grandfathering FMV Lookup (Section 55(2)(ac))
    */

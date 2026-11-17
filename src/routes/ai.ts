@@ -8,7 +8,6 @@ import {
   AiBankBatchClassifySchema,
   UniversalScanSchema,
   WealthAndBusinessScanSchema,
-  LifecycleAndNriScanSchema,
 } from '../security/vaptGuards.js';
 import { scrubVerhoeffAndPan } from '../security/verhoeffScrubber.js';
 import { authGuard } from '../middleware/authGuard.js';
