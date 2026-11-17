@@ -2,11 +2,22 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { IsinBatchLookupSchema, IFSC_REGEX, AY_REGEX } from '../security/vaptGuards.js';
 import { StatutoryService } from '../services/statutoryService.js';
+import { queryDb } from '../config/supabase.js';
 
 export const statutoryRoutes = new Hono();
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 const ALLOWED_ITR_FORMS = ['ITR-1', 'ITR-2', 'ITR-3', 'ITR-4', 'ITR-5', 'ITR-6', 'ITR-7'];
+
+const ITR_MANDATORY_SCHEDULES: Record<string, string[]> = {
+  'ITR-1': ['Salary', 'HP', 'OS'],
+  'ITR-2': ['Salary', 'HP', 'CG', 'OS', 'VIA', 'CYLA', 'CFL'],
+  'ITR-3': ['Salary', 'HP', 'BP', 'CG', 'OS', 'VIA', 'CYLA', 'CFL'],
+  'ITR-4': ['BP', 'Salary', 'HP', 'OS'],
+  'ITR-5': ['HP', 'BP', 'CG', 'OS', 'VIA', 'CYLA', 'CFL'],
+  'ITR-6': ['HP', 'BP', 'CG', 'OS', 'VIA', 'MAT', 'CYLA', 'CFL'],
+  'ITR-7': ['HP', 'BP', 'CG', 'OS', 'VIA', 'VC', 'CYLA', 'CFL'],
+};
 
 /**
  * 1. GET /api/v1/statutory/manifest
@@ -30,63 +41,75 @@ statutoryRoutes.get('/sbi-ttbr', async (c) => {
   const fromDate = c.req.query('fromDate');
   const toDate = c.req.query('toDate');
 
-  if (!/^[A-Z]{3}$/.test(currency)) {
-    return c.json({ errorCode: 'INVALID_CURRENCY_CODE', currency }, 400);
+  const ALLOWED_CURRENCIES = ['USD', 'EUR', 'GBP', 'CAD', 'SGD', 'AED'];
+  if (!ALLOWED_CURRENCIES.includes(currency)) {
+    return c.json({ errorCode: 'UNSUPPORTED_CURRENCY', allowed: ALLOWED_CURRENCIES }, 400);
   }
 
-  if (fromDate && (!DATE_REGEX.test(fromDate) || isNaN(Date.parse(fromDate)))) {
-    return c.json({ errorCode: 'INVALID_FROM_DATE_FORMAT', message: 'fromDate must be YYYY-MM-DD' }, 400);
+  if (fromDate && !DATE_REGEX.test(fromDate)) {
+    return c.json({ errorCode: 'INVALID_DATE_FORMAT', expected: 'YYYY-MM-DD' }, 400);
   }
-  if (toDate && (!DATE_REGEX.test(toDate) || isNaN(Date.parse(toDate)))) {
-    return c.json({ errorCode: 'INVALID_TO_DATE_FORMAT', message: 'toDate must be YYYY-MM-DD' }, 400);
+  if (toDate && !DATE_REGEX.test(toDate)) {
+    return c.json({ errorCode: 'INVALID_DATE_FORMAT', expected: 'YYYY-MM-DD' }, 400);
   }
 
-  const result = await StatutoryService.getSbiTtbrRates(currency, fromDate, toDate);
-  c.header('Cache-Control', 'public, max-age=43200, s-maxage=86400, stale-while-revalidate=604800');
-  return c.json(result);
+  const rates = await StatutoryService.getSbiTtbrRates(currency, fromDate, toDate);
+  c.header('Cache-Control', 'public, max-age=3600, s-maxage=7200, stale-while-revalidate=86400');
+  return c.json({
+    currency,
+    rates,
+    referenceStandard: 'SBI TT Buying Rate (Rule 115 CBDT Schedule FA compliance)',
+  });
 });
 
 /**
- * 3. POST /api/v1/statutory/isin-fmv-batch
+ * 3. POST /api/v1/statutory/isin-lookup
  */
-statutoryRoutes.post('/isin-fmv-batch', zValidator('json', IsinBatchLookupSchema), async (c) => {
+statutoryRoutes.post('/isin-lookup', zValidator('json', IsinBatchLookupSchema), async (c) => {
   const body = c.req.valid('json');
-  const result = await StatutoryService.getIsinGrandfatheringFmvs(body.isinCodes);
+  const results = await StatutoryService.lookupIsins(body.isins);
+  c.header('Cache-Control', 'public, max-age=3600, s-maxage=7200, stale-while-revalidate=86400');
+  return c.json({
+    referenceDate: '2018-01-31',
+    grandfatheringRule: 'Section 112A FMV Grandfathering Rate Reference (BSE/NSE)',
+    securities: results,
+  });
+});
+
+/**
+ * 4. GET /api/v1/statutory/ifsc/:code (API-VAPT-04: Strict IFSC format validation)
+ */
+statutoryRoutes.get('/ifsc/:code', async (c) => {
+  const code = (c.req.param('code') || '').toUpperCase();
+  if (!IFSC_REGEX.test(code)) {
+    return c.json({ errorCode: 'INVALID_IFSC_CODE_FORMAT', expected: '4 letters + 0 + 6 alphanumeric (e.g. HDFC0000001)' }, 400);
+  }
+
+  const bankDetails = await StatutoryService.lookupIfsc(code);
+  if (!bankDetails) {
+    return c.json({ errorCode: 'IFSC_NOT_FOUND', code }, 404);
+  }
+
   c.header('Cache-Control', 'public, max-age=86400, s-maxage=604800, stale-while-revalidate=2592000');
-  return c.json(result);
+  return c.json(bankDetails);
 });
 
 /**
- * 4. GET /api/v1/statutory/ifsc/:ifscCode
+ * 5. GET /api/v1/statutory/schema/:form (API-VAPT-02: Form enumeration validation)
  */
-statutoryRoutes.get('/ifsc/:ifscCode', async (c) => {
-  const ifsc = c.req.param('ifscCode');
-  if (!IFSC_REGEX.test(ifsc)) {
-    return c.json({ errorCode: 'INVALID_IFSC_FORMAT', ifsc }, 400);
-  }
-
-  const details = await StatutoryService.getIfscDetails(ifsc);
-  if (!details) {
-    return c.json({ errorCode: 'IFSC_NOT_FOUND', ifsc }, 404);
-  }
-
-  c.header('Cache-Control', 'public, max-age=604800, s-maxage=2592000, stale-while-revalidate=5184000');
-  return c.json(details);
-});
-
-/**
- * 5. GET /api/v1/statutory/cbdt-schema/:form (API-VAPT-06: Strict form whitelisting)
- */
-statutoryRoutes.get('/cbdt-schema/:form', async (c) => {
-  const form = c.req.param('form').toUpperCase();
+statutoryRoutes.get('/schema/:form', async (c) => {
+  const form = (c.req.param('form') || '').toUpperCase();
   const ay = c.req.query('ay') || '2026-27';
 
   if (!ALLOWED_ITR_FORMS.includes(form)) {
-    return c.json({ errorCode: 'INVALID_CBDT_FORM', form, allowedForms: ALLOWED_ITR_FORMS }, 400);
+    return c.json({ errorCode: 'UNSUPPORTED_ITR_FORM', allowed: ALLOWED_ITR_FORMS }, 400);
   }
+
   if (!AY_REGEX.test(ay)) {
     return c.json({ errorCode: 'INVALID_ASSESSMENT_YEAR_FORMAT' }, 400);
   }
+
+  c.header('Cache-Control', 'public, max-age=1800, s-maxage=3600, stale-while-revalidate=86400');
 
   return c.json({
     form,
@@ -94,7 +117,7 @@ statutoryRoutes.get('/cbdt-schema/:form', async (c) => {
     schemaVersion: 'Ver1.2',
     isDeprecated: false,
     validations: {
-      mandatorySchedules: form === 'ITR-2' ? ['Salary', 'HP', 'CG', 'OS', 'VIA', 'CYLA', 'CFL'] : ['Salary', 'OS', 'VIA'],
+      mandatorySchedules: ITR_MANDATORY_SCHEDULES[form] || ['Salary', 'OS', 'VIA'],
       scheduleFaMandatoryForNonResidents: false,
       sec112aGrandfatheringSupported: true,
     },
@@ -103,88 +126,91 @@ statutoryRoutes.get('/cbdt-schema/:form', async (c) => {
 });
 
 /**
- * 6. GET /api/v1/statutory/timeline (Dynamic statutory tax milestones & CBDT extensions)
+ * 6. GET /api/v1/statutory/timeline (Dynamic statutory tax milestones & live DB queries)
  */
 statutoryRoutes.get('/timeline', async (c) => {
   c.header('Cache-Control', 'public, max-age=900, s-maxage=1800, stale-while-revalidate=86400');
+  const ay = c.req.query('ay') || '2026-27';
   const currentYear = new Date().getFullYear();
+
+  let dbMilestones: any[] = [];
+  try {
+    dbMilestones = await queryDb(
+      `SELECT milestone_code, milestone_label, due_date, penalty_section, circular_ref
+       FROM statutory_filing_milestones
+       WHERE assessment_year = $1
+       ORDER BY due_date ASC`,
+      [ay]
+    );
+  } catch {
+    // DB not available or empty
+  }
+
+  const milestones = dbMilestones.length > 0
+    ? dbMilestones.map((m: any) => ({
+        id: m.milestone_code,
+        title: m.milestone_label,
+        dateText: new Date(m.due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }),
+        targetDateIso: m.due_date,
+        description: `Statutory compliance due date for ${m.milestone_label}.`,
+        statutorySection: m.penalty_section || 'Sec 139(1)',
+        isCritical: m.milestone_code?.includes('DEADLINE') || m.milestone_code?.includes('WARNING') || false,
+        circularRef: m.circular_ref || null,
+      }))
+    : [
+        {
+          id: 'MILESTONE_ITR_OPEN',
+          title: 'ITR Filing Window Opens',
+          dateText: `1st April ${currentYear}`,
+          targetDateIso: `${currentYear}-04-01`,
+          description: 'CBDT opens e-filing portal. Employers issue Form 16 Part A & B.',
+          statutorySection: 'Sec 139(1)',
+          isCritical: false,
+        },
+        {
+          id: 'MILESTONE_Q1_ADVANCE_TAX',
+          title: 'Q1 Advance Tax Due',
+          dateText: `15th June ${currentYear}`,
+          targetDateIso: `${currentYear}-06-15`,
+          description: '15% advance tax payable if net tax liability exceeds ₹10,000.',
+          statutorySection: 'Sec 208 / 211',
+          isCritical: false,
+        },
+        {
+          id: 'MILESTONE_JULY_DEADLINE',
+          title: 'Statutory Filing Deadline (ITR-1 / ITR-4)',
+          dateText: `31st July ${currentYear}`,
+          targetDateIso: `${currentYear}-07-31`,
+          description: 'Last day to file timely original return without interest or late fee.',
+          statutorySection: 'Sec 139(1)',
+          isCritical: true,
+          isExtended: false,
+        },
+        {
+          id: 'MILESTONE_TAX_AUDIT',
+          title: 'Tax Audit Filing Deadline',
+          dateText: `31st October ${currentYear}`,
+          targetDateIso: `${currentYear}-10-31`,
+          description: 'Due date for businesses & professionals subject to audit u/s 44AB.',
+          statutorySection: 'Sec 44AB / 139(1)',
+          isCritical: false,
+        },
+        {
+          id: 'MILESTONE_BELATED_CLOSE',
+          title: 'Belated / Revised Return Closes',
+          dateText: `31st December ${currentYear}`,
+          targetDateIso: `${currentYear}-12-31`,
+          description: 'Final cutoff to file belated return u/s 139(4) or revised return u/s 139(5).',
+          statutorySection: 'Sec 139(4) / 139(5)',
+          isCritical: true,
+        },
+      ];
+
   return c.json({
-    assessmentYear: '2026-27',
-    financialYear: '2025-26',
-    activeCirculars: [
-      {
-        circularId: 'CBDT-CIR-2026-01',
-        title: 'Form 16 Part A & B Issuance Extended',
-        summary: 'Employers allowed until June 20 to upload Form 24Q and issue Form 16.',
-        issuedDate: '2026-05-15',
-      },
-    ],
-    milestones: [
-      {
-        id: 'MILESTONE_ITR_OPEN',
-        title: 'ITR Filing Window Opens',
-        dateText: `1st April ${currentYear}`,
-        targetDateIso: `${currentYear}-04-01`,
-        description: 'CBDT opens e-filing portal. Employers issue Form 16 Part A & B.',
-        statutorySection: 'Sec 139(1)',
-        isCritical: false,
-      },
-      {
-        id: 'MILESTONE_Q1_ADVANCE_TAX',
-        title: 'Q1 Advance Tax Due',
-        dateText: `15th June ${currentYear}`,
-        targetDateIso: `${currentYear}-06-15`,
-        description: '15% advance tax payable if net tax liability exceeds ₹10,000.',
-        statutorySection: 'Sec 208 / 211',
-        isCritical: false,
-      },
-      {
-        id: 'MILESTONE_MID_SEASON',
-        title: 'Mid-Season 30-Day Reminder',
-        dateText: `1st July ${currentYear}`,
-        targetDateIso: `${currentYear}-07-01`,
-        description: 'Form 16 fully reflected in AIS/TIS. Ideal time to file for quick refunds.',
-        statutorySection: 'Sec 139(1)',
-        isCritical: false,
-      },
-      {
-        id: 'MILESTONE_FINAL_WARNING',
-        title: 'Urgent 6-Day Penalty Warning',
-        dateText: `25th July ${currentYear}`,
-        targetDateIso: `${currentYear}-07-25`,
-        description: 'Final countdown before mandatory ₹5,000 late fee u/s 234F kicks in.',
-        statutorySection: 'Sec 234F',
-        isCritical: true,
-      },
-      {
-        id: 'MILESTONE_JULY_DEADLINE',
-        title: 'Statutory Filing Deadline (ITR-1 / ITR-4)',
-        dateText: `31st July ${currentYear}`,
-        targetDateIso: `${currentYear}-07-31`,
-        description: 'Last day to file timely original return without interest or late fee.',
-        statutorySection: 'Sec 139(1)',
-        isCritical: true,
-        isExtended: false,
-      },
-      {
-        id: 'MILESTONE_TAX_AUDIT',
-        title: 'Tax Audit Filing Deadline',
-        dateText: `31st October ${currentYear}`,
-        targetDateIso: `${currentYear}-10-31`,
-        description: 'Due date for businesses & professionals subject to audit u/s 44AB.',
-        statutorySection: 'Sec 44AB / 139(1)',
-        isCritical: false,
-      },
-      {
-        id: 'MILESTONE_BELATED_CLOSE',
-        title: 'Belated / Revised Return Closes',
-        dateText: `31st December ${currentYear}`,
-        targetDateIso: `${currentYear}-12-31`,
-        description: 'Final statutory cutoff for belated u/s 139(4) or revised u/s 139(5).',
-        statutorySection: 'Sec 139(4) / 139(5)',
-        isCritical: true,
-      },
-    ],
+    assessmentYear: ay,
+    financialYear: `${Number(ay.slice(0, 4)) - 1}-${ay.slice(2, 4)}`,
+    activeCirculars: [],
+    milestones,
   });
 });
 
@@ -298,4 +324,3 @@ statutoryRoutes.get('/pdf-rules', async (c) => {
     ],
   });
 });
-

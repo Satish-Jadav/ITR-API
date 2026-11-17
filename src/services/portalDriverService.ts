@@ -358,8 +358,8 @@ export class PortalDriverService {
     devInMemorySessions.set(txnId, session);
     devPanToTxnMap.set(pan, txnId);
 
-    const maskedMobile = `••••••${pan.slice(6, 10)}`;
-    logger.info(`[IN-APP LIVE DRIVER OTP] Dispatched OTP for PAN ${maskedPan} (Txn: ${txnId})`);
+    const maskedMobile = `Aadhaar-linked mobile`;
+    logger.info(`[IN-APP LIVE DRIVER OTP] Dispatched OTP session for PAN ${maskedPan} (Txn: ${txnId})`);
 
     return {
       success: true,
@@ -368,7 +368,7 @@ export class PortalDriverService {
       maskedMobile,
       cooldownSeconds: 60,
       expiresAtIso,
-      message: `6-digit OTP dispatched to Aadhaar-linked mobile (${maskedMobile}). Valid for 10 minutes.`,
+      message: `Session initialized for PAN ${maskedPan}. Complete verification via ItdLivePortalSyncModal or enter Aadhaar OTP.`,
     };
   }
 
@@ -708,9 +708,9 @@ export class PortalDriverService {
       }
     }
 
-    // 3. Fallback: Zero-Cost In-App Live Driver
+    // 3. Fallback: Zero-Cost In-App Live Driver / Offline JSON Flow
     const txnId = crypto.randomUUID();
-    const token = `CBDT-TXN-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+    const token = `ITD-BRIDGE-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
 
     return {
       success: true,
@@ -720,9 +720,9 @@ export class PortalDriverService {
       token,
       txnId,
       timestamp: now.toISOString(),
-      verificationStatus: 'PENDING_EVC',
-      requiresOtpVerification: true,
-      message: `ITR Return for AY ${ay} validated against CBDT schema and ready for Aadhaar OTP e-Verification.`,
+      verificationStatus: 'PENDING_OFFLINE_UPLOAD',
+      requiresOtpVerification: false,
+      message: `CBDT JSON compiled for AY ${ay}. Ready for live upload via ItdLivePortalSyncModal or CBDT utility.`,
     };
   }
 
@@ -813,7 +813,7 @@ export class PortalDriverService {
     }
 
     // 3. In-App Live Driver verification attestation
-    const cpcVerificationRef = `CPC/EVC/2026-27/${crypto.randomInt(1000000, 9999999)}`;
+    const cpcVerificationRef = `EVC-PENDING-PORTAL-SYNC`;
     return {
       success: true,
       driver: 'IN_APP_LIVE_DRIVER',
@@ -821,7 +821,7 @@ export class PortalDriverService {
       acknowledgmentNumber: ackNo,
       cpcVerificationRef,
       verifiedAtIso: verifiedAt,
-      message: 'ITR Return e-Verified successfully u/s 140A.',
+      message: 'Return ready for e-verification via ITD Portal Session Bridge.',
     };
   }
 }

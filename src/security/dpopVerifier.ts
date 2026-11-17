@@ -92,7 +92,7 @@ export async function signDpopBoundAccessToken(
   })
     .setProtectedHeader({ alg: 'EdDSA', typ: 'at+jwt' })
     .setIssuer('https://api.zerotax.in')
-    .setAudience('in.zerotax.app')
+    .setAudience('in.zerotax')
     .setIssuedAt()
     .setExpirationTime(`${expiresInSeconds}s`)
     .sign(priv);
@@ -124,7 +124,7 @@ export async function verifyDpopBoundAccessToken(
   const { payload: accessPayload } = await jose.jwtVerify(accessToken, pub, {
     algorithms: ['EdDSA'],
     issuer: 'https://api.zerotax.in',
-    audience: 'in.zerotax.app',
+    audience: ['in.zerotax', 'in.zerotax.app'],
   });
 
   const userId = accessPayload.sub;

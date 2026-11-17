@@ -15,6 +15,10 @@ const cleanupReplayInterval = setInterval(() => {
 cleanupReplayInterval.unref();
 
 function isRequestIdReplayed(requestId: string): boolean {
+  // Prevent unbounded memory growth / DoS
+  if (seenRequestIds.size > 25_000) {
+    seenRequestIds.clear();
+  }
   const now = Date.now();
   const existingTs = seenRequestIds.get(requestId);
   if (existingTs !== undefined && now - existingTs <= 60_000) {
@@ -28,19 +32,35 @@ export async function edgeVaptFirewall(c: Context, next: Next) {
   const req = c.req;
   const clientIp = req.header('x-vercel-forwarded-for')?.split(',')[0].trim() || req.header('x-forwarded-for')?.split(',')[0].trim() || '127.0.0.1';
   c.set('clientIp', clientIp);
-  const requestId = req.header('x-zerotax-request-id') || crypto.randomUUID();
-  c.set('requestId', requestId);
-  c.header('X-ZeroTax-Request-Id', requestId);
 
   const path = req.path;
   const isCaShare = path.startsWith('/api/v1/compliance/ca-share/');
   const isStatutory = path.startsWith('/api/v1/statutory/');
+  const isCron = path.startsWith('/api/v1/cron/');
+  const isAaWebhook = path.startsWith('/api/v1/aa/webhook/');
   const isHealth = path.endsWith('/health') || path.endsWith('/portal-health') || path === '/' || path === '';
 
+  // API-VAPT-04: On mutating APK requests (excluding external webhooks, cron & health), require client request id
+  let requestId = req.header('x-zerotax-request-id');
+  if (!requestId) {
+    if (!isHealth && !isStatutory && !isCron && !isAaWebhook && req.method !== 'GET') {
+      return c.json(
+        {
+          errorCode: 'VAPT_04_MISSING_REQUEST_ID',
+          message: 'Mutating requests require an X-ZeroTax-Request-Id header.',
+        },
+        400
+      );
+    }
+    requestId = crypto.randomUUID();
+  }
+  c.set('requestId', requestId);
+  c.header('X-ZeroTax-Request-Id', requestId);
+
   // 1. API-VAPT-12: Reject Browser Cross-Origin Requests (Native Android APK Only!)
-  // Allow official CA portal origin for /compliance/ca-share/:token, and allow health checks
+  // Allow official CA portal origin for /compliance/ca-share/:token, and allow health/cron/webhook checks
   const origin = req.header('origin');
-  if (!isHealth && (origin || req.header('sec-fetch-site'))) {
+  if (!isHealth && !isCron && !isAaWebhook && (origin || req.header('sec-fetch-site'))) {
     const isAllowedCaOrigin = isCaShare && (origin === 'https://app.zerotax.in' || (process.env.NODE_ENV !== 'production' && origin?.includes('localhost')));
     if (!isAllowedCaOrigin) {
       return c.json(
@@ -76,8 +96,8 @@ export async function edgeVaptFirewall(c: Context, next: Next) {
   }
 
   // 3. API-VAPT-04: Anti-Replay Timestamp Window & Request ID Deduplication
-  // Skip timestamp checks on public CDN-cacheable GET statutory & health endpoints
-  if (!isHealth && !isStatutory && req.method !== 'GET') {
+  // Skip timestamp checks on public CDN-cacheable GET statutory, health, cron, and AA webhook endpoints
+  if (!isHealth && !isStatutory && !isCron && !isAaWebhook && req.method !== 'GET') {
     const tsHeader = Number(req.header('x-zerotax-timestamp') || '0');
     const nowSec = Math.floor(Date.now() / 1000);
     if (!tsHeader || Math.abs(nowSec - tsHeader) > 30) {

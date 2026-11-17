@@ -229,7 +229,7 @@ const genAi = env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: env.GEMINI_API_KEY 
  * Live Vault Context, Statutory RAG Citations & Tool Calls.
  */
 chatRoutes.post('/stream', zValidator('json', ChatStreamRequestSchema), async (c) => {
-  getCurrentUser(c);
+  const user = getCurrentUser(c);
   const body = c.req.valid('json');
   const { scrubbedText } = scrubVerhoeffAndPan(body.query);
   const snapshot = body.taxpayerSnapshot;
@@ -328,14 +328,22 @@ Answer the user's query with statutory clarity, referring to their verified numb
       });
     }
 
-    // Record turn in chat_messages_ledger
+    // Record turn in chat_messages_ledger (with ownership check to prevent BOLA)
     if (body.sessionId) {
       try {
-        await queryDb(
-          `INSERT INTO chat_messages_ledger (session_id, sender, content, rag_citations)
-           VALUES ($1::uuid, 'USER', $2, $3::jsonb)`,
-          [body.sessionId, scrubbedText, JSON.stringify(ragCitations)]
+        const sessionOwner = await queryDb(
+          `SELECT session_id FROM chat_filing_sessions WHERE session_id = $1::uuid AND user_id = $2::uuid`,
+          [body.sessionId, user.userId],
+          user.userId
         );
+        if (sessionOwner.length > 0) {
+          await queryDb(
+            `INSERT INTO chat_messages_ledger (session_id, sender, content, rag_citations)
+             VALUES ($1::uuid, 'USER', $2, $3::jsonb)`,
+            [body.sessionId, scrubbedText, JSON.stringify(ragCitations)],
+            user.userId
+          );
+        }
       } catch {}
     }
 
