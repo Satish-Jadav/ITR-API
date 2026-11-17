@@ -399,10 +399,10 @@ portalRoutes.post('/submit', async (c) => {
     return c.json(
       {
         success: false,
-        errorCode: 'SUBMISSION_FAILED',
+        errorCode: err.errorCode || 'SUBMISSION_FAILED',
         message: err.message || 'Failed to submit ITR.',
       },
-      500
+      err.statusCode || 500
     );
   }
 });
@@ -440,10 +440,10 @@ portalRoutes.post(
       return c.json(
         {
           success: false,
-          errorCode: 'EVERIFY_FAILED',
+          errorCode: err.errorCode || 'EVERIFY_FAILED',
           message: err.message || 'e-Verification failed.',
         },
-        500
+        err.statusCode || 500
       );
     }
   }

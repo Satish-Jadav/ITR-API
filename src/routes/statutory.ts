@@ -29,6 +29,9 @@ statutoryRoutes.get('/manifest', async (c) => {
   }
   const currentVersion = c.req.query('currentVersion');
   const manifest = await StatutoryService.getManifest(ay, currentVersion);
+  if (!manifest) {
+    return c.json({ errorCode: 'STATUTORY_BUNDLE_NOT_FOUND', assessmentYear: ay }, 404);
+  }
   c.header('Cache-Control', 'public, max-age=1800, s-maxage=3600, stale-while-revalidate=86400');
   return c.json(manifest);
 });

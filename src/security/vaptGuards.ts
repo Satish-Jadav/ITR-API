@@ -314,7 +314,7 @@ export const PostSyncBriefingRequestSchema = z
 export const FilingSpeedTelemetrySchema = z
   .object({
     anonymizedFilingId: z.string().min(8).max(64),
-    itrType: z.enum(['ITR-1', 'ITR-2', 'ITR-3', 'ITR-4']),
+    itrType: z.enum(['ITR-1', 'ITR-2', 'ITR-3', 'ITR-4', 'ITR-1-SAHAJ', 'ITR-4-SUGAM']),
     assessmentYear: z.string().regex(AY_REGEX).default('2026-27'),
     startTimestamp: z.string().datetime(),
     submissionTimestamp: z.string().datetime(),
