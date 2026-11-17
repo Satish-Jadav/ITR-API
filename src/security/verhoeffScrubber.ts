@@ -35,13 +35,22 @@ export function validateVerhoeff(numStr: string): boolean {
 export function scrubVerhoeffAndPan(text: string): { scrubbedText: string; redactedCount: number } {
   let count = 0;
 
-  // 1. Scrub PAN: 5 letters, 4 digits, 1 letter (case-insensitive + boundary safe e.g. ABCDE1234F / abcde1234f)
-  let scrubbed = text.replace(/(^|[^A-Za-z0-9])([A-Za-z]{5}[0-9]{4}[A-Za-z])(?=[^A-Za-z0-9]|$)/g, (_match, prefix) => {
+  // 1. Scrub Spaced PANs (OCR box artifacts: "A B C D E 1 2 3 4 F")
+  let scrubbed = text.replace(
+    /\b([A-Za-z])\s+([A-Za-z])\s+([A-Za-z])\s+([A-Za-z])\s+([A-Za-z])\s+([0-9])\s+([0-9])\s+([0-9])\s+([0-9])\s+([A-Za-z])\b/g,
+    () => {
+      count++;
+      return '[PAN_REDACTED]';
+    }
+  );
+
+  // 2. Scrub Contiguous PAN: 5 letters, 4 digits, 1 letter (case-insensitive + boundary safe)
+  scrubbed = scrubbed.replace(/(^|[^A-Za-z0-9])([A-Za-z]{5}[0-9]{4}[A-Za-z])(?=[^A-Za-z0-9]|$)/g, (_match, prefix) => {
     count++;
     return prefix + '[PAN_REDACTED]';
   });
 
-  // 2. Scrub 12-digit Aadhaar & 16-digit VID (fail-safe for financial transcripts even if OCR checksum has single digit typo)
+  // 3. Scrub 12-digit Aadhaar & 16-digit VID (fail-safe for financial transcripts even if OCR checksum has single digit typo)
   scrubbed = scrubbed.replace(/(^|[^0-9])(\d{4}[\s-]?\d{4}[\s-]?\d{4}|\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4})(?=[^0-9]|$)/g, (_match, prefix, digitsGroup) => {
     const raw = digitsGroup.replace(/[\s-]/g, '');
     if (raw.length === 12 || raw.length === 16) {
@@ -49,6 +58,18 @@ export function scrubVerhoeffAndPan(text: string): { scrubbedText: string; redac
       return prefix + (raw.length === 12 ? '[AADHAAR_REDACTED]' : '[VID_REDACTED]');
     }
     return prefix + digitsGroup;
+  });
+
+  // 4. Scrub Email Addresses
+  scrubbed = scrubbed.replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, () => {
+    count++;
+    return '[EMAIL_REDACTED]';
+  });
+
+  // 5. Scrub Indian Mobile Numbers (10 digits starting with 6, 7, 8, 9, optional +91 / 91 / 0)
+  scrubbed = scrubbed.replace(/(^|[^0-9])(?:(?:\+91|91|0)[-.\s]?)?([6-9]\d{9})(?=[^0-9]|$)/g, (_match, prefix) => {
+    count++;
+    return prefix + '[MOBILE_REDACTED]';
   });
 
   return { scrubbedText: scrubbed, redactedCount: count };

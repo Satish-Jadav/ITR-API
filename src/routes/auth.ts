@@ -153,13 +153,10 @@ authRoutes.post('/oauth/google-pkce', zValidator('json', GooglePkceExchangeReque
     return c.json({ errorCode: 'PLAY_INTEGRITY_REJECTED', details: integrity.error, requestId }, 403);
   }
 
-  // 4. Verify Google ID Token (API-VAPT-02: Strict production OAuth enforcement)
-  const isProduction = env.NODE_ENV === 'production';
-  if (isProduction && body.googleIdToken.startsWith('mock_')) {
-    return c.json({ errorCode: 'MOCK_TOKEN_FORBIDDEN_IN_PRODUCTION', requestId }, 401);
-  }
-  if (isProduction && !env.GOOGLE_OAUTH_CLIENT_ID) {
-    return c.json({ errorCode: 'GOOGLE_OAUTH_CONFIG_MISSING', message: 'GOOGLE_OAUTH_CLIENT_ID must be set in production.', requestId }, 500);
+  // 4. Verify Google ID Token (API-VAPT-02: Strict OAuth enforcement)
+  const isTest = process.env.NODE_ENV === 'test';
+  if (!isTest && body.googleIdToken.startsWith('mock_')) {
+    return c.json({ errorCode: 'MOCK_TOKEN_FORBIDDEN', message: 'Mock tokens are strictly forbidden outside test environments.', requestId }, 401);
   }
 
   let googleEmail = `user-${session.device_installation_id.slice(0, 8)}@zerotax.in`;
@@ -173,13 +170,16 @@ authRoutes.post('/oauth/google-pkce', zValidator('json', GooglePkceExchangeReque
         audience: env.GOOGLE_OAUTH_CLIENT_ID,
       });
       const payload = ticket.getPayload();
-      if (payload) {
-        googleEmail = payload.email || googleEmail;
-        googleSub = payload.sub;
+      if (!payload?.email) {
+        return c.json({ errorCode: 'GOOGLE_EMAIL_MISSING_IN_TOKEN', message: 'Google ID token did not contain a verified email address.', requestId }, 401);
       }
+      googleEmail = payload.email;
+      googleSub = payload.sub;
     } catch (e: any) {
       return c.json({ errorCode: 'INVALID_GOOGLE_ID_TOKEN', message: e.message, requestId }, 401);
     }
+  } else if (!isTest && !env.GOOGLE_OAUTH_CLIENT_ID) {
+    return c.json({ errorCode: 'GOOGLE_OAUTH_CONFIG_MISSING', message: 'GOOGLE_OAUTH_CLIENT_ID must be configured.', requestId }, 500);
   }
 
   // 5. Upsert User in Supabase Postgres (AES-256-GCM encrypted email + HMAC blind index)

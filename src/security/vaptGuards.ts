@@ -305,7 +305,7 @@ export const PostSyncBriefingRequestSchema = z
       recommendedForm: z.string().default('ITR-1'),
       refundAmount: z.number().default(0),
       taxPayable: z.number().default(0),
-      bankAccountMasked: z.string().default('••••••••4821'),
+      bankAccountMasked: z.string().default('Pending Bank Validation'),
     }),
   })
   .strict();

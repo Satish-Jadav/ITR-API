@@ -10,9 +10,14 @@ import { env } from '../config/env.js';
 
 export const aaRoutes = new Hono();
 
+const sahamatiJwksUrl = process.env.AA_SAHAMATI_JWKS_URL;
+const remoteSahamatiJwks = sahamatiJwksUrl
+  ? jose.createRemoteJWKSet(new URL(sahamatiJwksUrl))
+  : null;
+
 /**
  * 0. POST /api/v1/aa/webhook/fi-ready (Public Webhook called by RBI Account Aggregators)
- * Validates incoming AA payload and marks the consent session FI_READY.
+ * Validates incoming AA JWS signature and marks the consent session FI_READY.
  */
 aaRoutes.post('/webhook/fi-ready', async (c) => {
   let body: any;
@@ -26,22 +31,39 @@ aaRoutes.post('/webhook/fi-ready', async (c) => {
   if (process.env.NODE_ENV === 'production' || jwsSignature) {
     if (!jwsSignature) {
       logger.warn('[AA WEBHOOK] Missing x-jws-signature header');
-      return c.json({ errorCode: 'UNAUTHORIZED_WEBHOOK_SIGNATURE', message: 'Missing x-jws-signature header' }, 401);
+      return c.json(
+        { errorCode: 'UNAUTHORIZED_WEBHOOK_SIGNATURE', message: 'Missing x-jws-signature header' },
+        401
+      );
     }
-    // P0-2 Fix: Verify JWS cryptographic structure to reject spoofed/dummy headers
     const parts = jwsSignature.split('.');
     if (parts.length !== 3 || !parts[0] || !parts[2]) {
       logger.warn('[AA WEBHOOK] Malformed or spoofed x-jws-signature header');
-      return c.json({ errorCode: 'INVALID_JWS_SIGNATURE_FORMAT', message: 'x-jws-signature must be a valid JWS' }, 401);
+      return c.json(
+        { errorCode: 'INVALID_JWS_SIGNATURE_FORMAT', message: 'x-jws-signature must be a valid JWS' },
+        401
+      );
     }
     try {
       const protectedHeader = jose.decodeProtectedHeader(jwsSignature);
       const validAlgs = ['RS256', 'ES256', 'EdDSA', 'PS256'];
       if (!protectedHeader.alg || !validAlgs.includes(protectedHeader.alg)) {
-        return c.json({ errorCode: 'UNSUPPORTED_JWS_ALGORITHM', message: 'Unsupported algorithm in JWS header' }, 401);
+        return c.json(
+          { errorCode: 'UNSUPPORTED_JWS_ALGORITHM', message: 'Unsupported algorithm in JWS header' },
+          401
+        );
+      }
+      // Cryptographically verify JWS signature against Sahamati JWK Set when configured
+      if (remoteSahamatiJwks) {
+        await jose.compactVerify(jwsSignature, remoteSahamatiJwks, {
+          algorithms: validAlgs,
+        });
       }
     } catch {
-      return c.json({ errorCode: 'INVALID_JWS_HEADER', message: 'Failed to decode JWS protected header' }, 401);
+      return c.json(
+        { errorCode: 'INVALID_JWS_SIGNATURE', message: 'Failed to verify JWS signature' },
+        401
+      );
     }
   }
 
@@ -56,8 +78,8 @@ aaRoutes.post('/webhook/fi-ready', async (c) => {
 
   try {
     await queryDb(
-      `UPDATE aa_fiu_consent_sessions
-       SET consent_status = 'FI_READY'
+      `UPDATE aa_fiu_consent_sessions 
+       SET consent_status = 'FI_READY' 
        WHERE consent_id = $1::uuid OR consent_handle = $1::uuid`,
       [consentId]
     );
@@ -90,11 +112,11 @@ aaRoutes.post('/consent/create', zValidator('json', AaConsentCreateSchema), asyn
 
   const rows = await queryDb(
     `INSERT INTO aa_fiu_consent_sessions (
-       user_id, consent_handle, aa_provider_id, apk_ephemeral_x25519_pub_key_base64,
-       apk_fiu_nonce_base64, purpose_code, fetch_type, consent_status, expires_at
-     )
-     VALUES ($1::uuid, $2::uuid, $3, $4, $5, '101', $6, 'PENDING', $7)
-     RETURNING aa_session_id, consent_handle`,
+      user_id, consent_handle, aa_provider_id, apk_ephemeral_x25519_pub_key_base64,
+      apk_fiu_nonce_base64, purpose_code, fetch_type, consent_status, expires_at
+    )
+    VALUES ($1::uuid, $2::uuid, $3, $4, $5, '101', $6, 'PENDING', $7)
+    RETURNING aa_session_id, consent_handle`,
     [
       user.userId,
       consentHandle,
@@ -111,7 +133,7 @@ aaRoutes.post('/consent/create', zValidator('json', AaConsentCreateSchema), asyn
     {
       aaSessionId: rows[0].aa_session_id,
       consentHandle: rows[0].consent_handle,
-      aaRedirectWebUrl: `https://webview.finvu.in/consent?handle=${consentHandle}&app=in.zerotax.app`,
+      aaRedirectWebUrl: `https://webview.finvu.in/consent?handle=${consentHandle}&app=in.zerotax`,
       enforcedPolicy: {
         purposeCode: '101',
         fetchType: isPeriodic ? 'PERIODIC' : 'ONETIME',
@@ -131,8 +153,8 @@ aaRoutes.get('/consent/:handle/status', async (c) => {
   const handle = c.req.param('handle');
 
   const rows = await queryDb(
-    `SELECT aa_session_id, consent_id, consent_status, expires_at
-     FROM aa_fiu_consent_sessions
+    `SELECT aa_session_id, consent_id, consent_status, expires_at 
+     FROM aa_fiu_consent_sessions 
      WHERE user_id = $1::uuid AND consent_handle = $2::uuid`,
     [user.userId, handle],
     user.userId
@@ -160,8 +182,8 @@ aaRoutes.post('/fi/request', zValidator('json', AaFiRequestSchema), async (c) =>
 
   const sessionId = crypto.randomUUID();
   await queryDb(
-    `UPDATE aa_fiu_consent_sessions
-     SET consent_status = 'FI_READY'
+    `UPDATE aa_fiu_consent_sessions 
+     SET consent_status = 'FI_READY' 
      WHERE user_id = $1::uuid AND (consent_id = $2::uuid OR consent_handle = $2::uuid)`,
     [user.userId, body.consentId],
     user.userId
@@ -179,17 +201,15 @@ aaRoutes.post('/fi/request', zValidator('json', AaFiRequestSchema), async (c) =>
  * CRITICAL ZERO-KNOWLEDGE RULE: Vercel server returns FIP ciphertext untouched.
  */
 aaRoutes.get('/fi/fetch/:sessionId', async (c) => {
-  getCurrentUser(c);
+  const user = getCurrentUser(c);
   const sessionId = c.req.param('sessionId');
 
-  const user = getCurrentUser(c);
-  // Connect to live AA FIU Gateway if configured
   if (env.AA_FIU_BASE_URL) {
     try {
       const fiuRes = await fetch(`${env.AA_FIU_BASE_URL}/FI/fetch/${sessionId}`, {
         headers: {
           'x-fiu-id': 'ZEROTAX_FIU',
-          'Authorization': `Bearer ${user.userId}`,
+          Authorization: `Bearer ${user.userId}`,
         },
       });
       if (fiuRes.ok) {
@@ -197,29 +217,22 @@ aaRoutes.get('/fi/fetch/:sessionId', async (c) => {
         return c.json(liveData);
       }
     } catch (err: any) {
-      logger.warn('[AA FIU FETCH] Gateway fetch failed, returning verified empty payload:', err.message);
+      logger.warn('[AA FIU FETCH] Gateway fetch failed:', err.message);
     }
   }
 
-  // Pure zero-mock ReBIT technical framework envelope:
-  const fipEphemeralKey = crypto.randomBytes(32).toString('base64');
-  const fipNonce = crypto.randomBytes(16).toString('base64');
-
-  return c.json({
-    aaSessionId: sessionId,
-    fipId: 'REBIT-CERTIFIED-FIP',
-    fipKeyMaterial: {
-      cryptoAlg: 'ECDHE',
-      curve: 'Curve25519',
-      fipEphemeralPublicKeyBase64: fipEphemeralKey,
-      fipNonceBase64: fipNonce,
+  return c.json(
+    {
+      aaSessionId: sessionId,
+      status: 'AA_FIU_GATEWAY_NOT_CONFIGURED_USE_PDF_IMPORT',
+      encryptedFiObjects: [],
     },
-    encryptedFiObjects: [],
-  });
+    200
+  );
 });
 
 /**
- * 5. POST /api/v1/aa/consent/revoke (API-VAPT-04: Strict consentId validation)
+ * 5. POST /api/v1/aa/consent/revoke
  */
 aaRoutes.post('/consent/revoke', async (c) => {
   const user = getCurrentUser(c);
@@ -229,20 +242,21 @@ aaRoutes.post('/consent/revoke', async (c) => {
     try {
       const body = await c.req.json();
       consentId = body?.consentId;
-    } catch {
-      // Body not JSON or empty
-    }
+    } catch {}
   }
 
   const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (!consentId || !UUID_REGEX.test(consentId)) {
-    return c.json({ errorCode: 'INVALID_OR_MISSING_CONSENT_ID', message: 'Valid UUID consentId is required to revoke.' }, 400);
+    return c.json(
+      { errorCode: 'INVALID_OR_MISSING_CONSENT_ID', message: 'Valid UUID consentId is required to revoke.' },
+      400
+    );
   }
 
   const result = await queryDb(
-    `UPDATE aa_fiu_consent_sessions
-     SET consent_status = 'REVOKED'
-     WHERE user_id = $1::uuid AND (consent_id = $2::uuid OR consent_handle = $2::uuid)
+    `UPDATE aa_fiu_consent_sessions 
+     SET consent_status = 'REVOKED' 
+     WHERE user_id = $1::uuid AND (consent_id = $2::uuid OR consent_handle = $2::uuid) 
      RETURNING aa_session_id`,
     [user.userId, consentId],
     user.userId

@@ -48,7 +48,7 @@ const envSchema = z.object({
 
   // Google Play Integrity & OAuth
   GOOGLE_PLAY_INTEGRITY_SERVICE_ACCOUNT_JSON: z.string().optional(),
-  GOOGLE_PLAY_PACKAGE_NAME: z.string().default('in.zerotax.app'),
+  GOOGLE_PLAY_PACKAGE_NAME: z.string().default('in.zerotax'),
   GOOGLE_PLAY_RELEASE_CERT_SHA256: z.string().optional(),
   ALLOW_PLAY_INTEGRITY_DEV_BYPASS: z
     .string()

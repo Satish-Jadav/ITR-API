@@ -19,7 +19,36 @@ export class VaultService {
     // Versioned storage path prevents silent clobbering / race condition collisions (API-VAPT-06)
     const storagePath = `${userId}/${body.panBlindIndexHmac}_${body.assessmentYear}_v${nextVersion}.ztvault`;
 
-    // 1. Upload opaque ciphertext to Supabase Storage
+    // 1. Pre-validation: Check duplicate GCM IVs across payloads BEFORE storage upload
+    try {
+      const existingIv = await queryDb(
+        `SELECT backup_id FROM encrypted_tax_vault_backups WHERE aes_gcm_iv_hex = $1 LIMIT 1`,
+        [body.aesGcmIvHex]
+      );
+      if (existingIv.length > 0) {
+        throw new Error('DUPLICATE_AES_GCM_IV_REJECTED_400');
+      }
+    } catch (e: any) {
+      if (e.message === 'DUPLICATE_AES_GCM_IV_REJECTED_400') {
+        throw e;
+      }
+      if (process.env.NODE_ENV !== 'test') {
+        throw new Error(`VAULT_IV_CHECK_FAILED: ${e.message}`);
+      }
+    }
+
+    // 2. Pre-validation: Check expectedPreviousVersion consistency in DB
+    const existingVersion = await queryDb(
+      `SELECT version_number FROM encrypted_tax_vault_backups
+       WHERE user_id = $1::uuid AND pan_blind_index_hmac = $2 AND assessment_year = $3`,
+      [userId, body.panBlindIndexHmac, body.assessmentYear],
+      userId
+    );
+    if (existingVersion.length > 0 && existingVersion[0].version_number !== body.expectedPreviousVersion) {
+      throw new Error('VAULT_VERSION_CONFLICT_409');
+    }
+
+    // 3. Upload opaque ciphertext to Supabase Storage
     let storageUploaded = false;
     try {
       const supabase = getSupabase();
@@ -44,26 +73,7 @@ export class VaultService {
       throw new Error('STORAGE_SERVICE_UNAVAILABLE_503');
     }
 
-    // Break #5 & P0-1: Reject duplicate GCM IVs across payloads (strictly fail-closed in production)
-    try {
-      const existingIv = await queryDb(
-        `SELECT backup_id FROM encrypted_tax_vault_backups WHERE aes_gcm_iv_hex = $1 LIMIT 1`,
-        [body.aesGcmIvHex]
-      );
-      if (existingIv.length > 0) {
-        throw new Error('DUPLICATE_AES_GCM_IV_REJECTED_400');
-      }
-    } catch (e: any) {
-      if (e.message === 'DUPLICATE_AES_GCM_IV_REJECTED_400') {
-        throw e;
-      }
-      if (process.env.NODE_ENV !== 'test') {
-        throw new Error(`VAULT_IV_CHECK_FAILED: ${e.message}`);
-      }
-    }
-
-    // 2. Upsert cryptographic metadata into PostgreSQL encrypted_tax_vault_backups.
-    // Offload payload to Supabase Storage (ciphertext_payload_base64 is NULL) to prevent DB bloat (API-VAPT-07)
+    // 4. Upsert cryptographic metadata into PostgreSQL encrypted_tax_vault_backups.
     const rows = await queryDb(
       `INSERT INTO encrypted_tax_vault_backups (
           user_id, pan_blind_index_hmac, assessment_year, relationship_tag,
@@ -144,6 +154,7 @@ export class VaultService {
 
     // If storage path exists, attempt to pull latest bytes from Supabase Storage
     if (record.storage_path) {
+      let downloadedBytes: Buffer | null = null;
       try {
         const supabase = getSupabase();
         const { data, error } = await supabase.storage
@@ -152,16 +163,19 @@ export class VaultService {
 
         if (data && !error) {
           const arrayBuffer = await data.arrayBuffer();
-          const downloadedBytes = Buffer.from(arrayBuffer);
-          const computedSha256 = crypto.createHash('sha256').update(downloadedBytes).digest('hex');
-          if (record.ciphertext_sha256_hex && computedSha256 !== record.ciphertext_sha256_hex) {
-            console.error('[VAULT CORRUPTION] SHA-256 mismatch detected for ' + record.storage_path);
-            throw new Error('VAULT_CORRUPTED_OR_TAMPERED');
-          }
-          payloadBase64 = downloadedBytes.toString('base64');
+          downloadedBytes = Buffer.from(arrayBuffer);
         }
       } catch (err: any) {
-        console.warn('Falling back to inline payload:', err.message);
+        console.warn('Supabase storage download note:', err.message);
+      }
+
+      if (downloadedBytes) {
+        const computedSha256 = crypto.createHash('sha256').update(downloadedBytes).digest('hex');
+        if (record.ciphertext_sha256_hex && computedSha256 !== record.ciphertext_sha256_hex) {
+          console.error('[VAULT CORRUPTION] SHA-256 mismatch detected for ' + record.storage_path);
+          throw new Error('VAULT_CORRUPTED_OR_TAMPERED');
+        }
+        payloadBase64 = downloadedBytes.toString('base64');
       }
     }
 
@@ -197,7 +211,7 @@ export class VaultService {
   }
 
   /**
-   * Deletes vault backup from Supabase Storage and Postgres
+   * Complete DPDP Section 12 Erasure: Deletes all vault historical versions from Supabase Storage and Postgres
    */
   static async purgeVault(userId: string, panBlindIndexHmac: string) {
     const records = await queryDb(
@@ -207,7 +221,24 @@ export class VaultService {
       userId
     );
 
-    // Delete files from Supabase Storage
+    // Complete DPDP Section 12 Erasure: delete all historical versioned _v1.._vN.ztvault files in storage
+    try {
+      const supabase = getSupabase();
+      const bucket = env.SUPABASE_VAULT_BUCKET;
+      const { data: fileList } = await supabase.storage.from(bucket).list(userId);
+      if (fileList && fileList.length > 0) {
+        const toDelete = fileList
+          .filter((f) => f.name.startsWith(panBlindIndexHmac))
+          .map((f) => `${userId}/${f.name}`);
+        if (toDelete.length > 0) {
+          await supabase.storage.from(bucket).remove(toDelete);
+        }
+      }
+    } catch (e: any) {
+      console.warn('Supabase storage bucket list/purge warning:', e.message);
+    }
+
+    // Also remove explicitly tracked storage paths
     for (const rec of records) {
       if (rec.storage_path) {
         try {
