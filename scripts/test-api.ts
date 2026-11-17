@@ -66,10 +66,23 @@ async function runTests() {
       'content-type': 'application/json',
       'content-length': String(Buffer.byteLength(largePayload)),
       'x-zerotax-timestamp': String(nowSec),
+      'x-zerotax-request-id': 'req-test-vapt08-payload-large',
     },
     body: largePayload,
   });
   assert(largeRes.status === 413, 'VAPT-08: Rejects payload exceeding size limit with 413');
+
+  // Test 4b: Require DPoP auth on AI copilot intent
+  const unauthRes = await app.request('/api/v1/ai/copilot-intent', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-zerotax-timestamp': String(nowSec),
+      'x-zerotax-request-id': 'req-test-ai-unauth',
+    },
+    body: JSON.stringify({ query: 'What is Section 80C limit?' }),
+  });
+  assert(unauthRes.status === 401, 'POST /api/v1/ai/copilot-intent without DPoP auth returns 401');
 
   // Test 5: Statutory Manifest with valid timestamp
   const manifestRes = await app.request('/api/v1/statutory/manifest?ay=2026-27', {

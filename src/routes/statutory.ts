@@ -63,9 +63,9 @@ statutoryRoutes.get('/sbi-ttbr', async (c) => {
 });
 
 /**
- * 3. POST /api/v1/statutory/isin-lookup
+ * 3. POST /api/v1/statutory/isin-lookup and alias /isin-fmv-batch
  */
-statutoryRoutes.post('/isin-lookup', zValidator('json', IsinBatchLookupSchema), async (c) => {
+const handleIsinLookup = async (c: any) => {
   const body = c.req.valid('json');
   const results = await StatutoryService.lookupIsins(body.isins);
   c.header('Cache-Control', 'public, max-age=3600, s-maxage=7200, stale-while-revalidate=86400');
@@ -74,7 +74,9 @@ statutoryRoutes.post('/isin-lookup', zValidator('json', IsinBatchLookupSchema), 
     grandfatheringRule: 'Section 112A FMV Grandfathering Rate Reference (BSE/NSE)',
     securities: results,
   });
-});
+};
+statutoryRoutes.post('/isin-lookup', zValidator('json', IsinBatchLookupSchema), handleIsinLookup);
+statutoryRoutes.post('/isin-fmv-batch', zValidator('json', IsinBatchLookupSchema), handleIsinLookup);
 
 /**
  * 4. GET /api/v1/statutory/ifsc/:code (API-VAPT-04: Strict IFSC format validation)
@@ -95,9 +97,9 @@ statutoryRoutes.get('/ifsc/:code', async (c) => {
 });
 
 /**
- * 5. GET /api/v1/statutory/schema/:form (API-VAPT-02: Form enumeration validation)
+ * 5. GET /api/v1/statutory/schema/:form and alias /cbdt-schema/:form (API-VAPT-02: Form enumeration validation)
  */
-statutoryRoutes.get('/schema/:form', async (c) => {
+const handleFormSchema = async (c: any) => {
   const form = (c.req.param('form') || '').toUpperCase();
   const ay = c.req.query('ay') || '2026-27';
 
@@ -123,7 +125,9 @@ statutoryRoutes.get('/schema/:form', async (c) => {
     },
     publishedAtIso: '2026-04-01T00:00:00Z',
   });
-});
+};
+statutoryRoutes.get('/schema/:form', handleFormSchema);
+statutoryRoutes.get('/cbdt-schema/:form', handleFormSchema);
 
 /**
  * 6. GET /api/v1/statutory/timeline (Dynamic statutory tax milestones & live DB queries)

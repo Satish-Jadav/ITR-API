@@ -66,12 +66,24 @@ vaultRoutes.get('/sync/:panBlindIndexHmac', async (c) => {
     return c.json({ errorCode: 'INVALID_PAN_BLIND_INDEX_FORMAT' }, 400);
   }
 
-  const vault = await VaultService.getVault(user.userId, panHmac, ay);
-  if (!vault) {
-    return c.json({ errorCode: 'VAULT_NOT_FOUND', panBlindIndexHmac: panHmac, assessmentYear: ay }, 404);
+  try {
+    const vault = await VaultService.getVault(user.userId, panHmac, ay);
+    if (!vault) {
+      return c.json({ errorCode: 'VAULT_NOT_FOUND', panBlindIndexHmac: panHmac, assessmentYear: ay }, 404);
+    }
+    return c.json(vault);
+  } catch (err: any) {
+    if (err.message === 'VAULT_CORRUPTED_OR_TAMPERED') {
+      return c.json(
+        {
+          errorCode: 'VAULT_CORRUPTED_OR_TAMPERED',
+          message: 'Cloud vault payload failed integrity check. SHA-256 digest does not match.',
+        },
+        422
+      );
+    }
+    throw err;
   }
-
-  return c.json(vault);
 });
 
 /**

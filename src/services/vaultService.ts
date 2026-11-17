@@ -165,17 +165,28 @@ export class VaultService {
           const arrayBuffer = await data.arrayBuffer();
           downloadedBytes = Buffer.from(arrayBuffer);
         }
+
+        if (downloadedBytes) {
+          const computedSha256 = crypto.createHash('sha256').update(downloadedBytes).digest('hex');
+          if (record.ciphertext_sha256_hex && computedSha256 !== record.ciphertext_sha256_hex) {
+            console.error('[VAULT CORRUPTION] SHA-256 mismatch detected for ' + record.storage_path);
+            throw new Error('VAULT_CORRUPTED_OR_TAMPERED');
+          }
+          payloadBase64 = downloadedBytes.toString('base64');
+        }
       } catch (err: any) {
+        if (err.message === 'VAULT_CORRUPTED_OR_TAMPERED') {
+          throw err;
+        }
         console.warn('Supabase storage download note:', err.message);
       }
+    }
 
-      if (downloadedBytes) {
-        const computedSha256 = crypto.createHash('sha256').update(downloadedBytes).digest('hex');
-        if (record.ciphertext_sha256_hex && computedSha256 !== record.ciphertext_sha256_hex) {
-          console.error('[VAULT CORRUPTION] SHA-256 mismatch detected for ' + record.storage_path);
-          throw new Error('VAULT_CORRUPTED_OR_TAMPERED');
-        }
-        payloadBase64 = downloadedBytes.toString('base64');
+    if (payloadBase64 && record.ciphertext_sha256_hex) {
+      const computedSha256 = crypto.createHash('sha256').update(Buffer.from(payloadBase64, 'base64')).digest('hex');
+      if (computedSha256 !== record.ciphertext_sha256_hex) {
+        console.error('[VAULT CORRUPTION] SHA-256 mismatch detected for ' + (record.storage_path || record.backup_id));
+        throw new Error('VAULT_CORRUPTED_OR_TAMPERED');
       }
     }
 

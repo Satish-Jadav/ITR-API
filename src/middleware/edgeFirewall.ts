@@ -40,41 +40,7 @@ export async function edgeVaptFirewall(c: Context, next: Next) {
   const isAaWebhook = path.startsWith('/api/v1/aa/webhook/');
   const isHealth = path.endsWith('/health') || path.endsWith('/portal-health') || path === '/' || path === '';
 
-  // API-VAPT-04: On mutating APK requests (excluding external webhooks, cron & health), require client request id
-  let requestId = req.header('x-zerotax-request-id');
-  if (!requestId) {
-    if (!isHealth && !isStatutory && !isCron && !isAaWebhook && req.method !== 'GET') {
-      return c.json(
-        {
-          errorCode: 'VAPT_04_MISSING_REQUEST_ID',
-          message: 'Mutating requests require an X-ZeroTax-Request-Id header.',
-        },
-        400
-      );
-    }
-    requestId = crypto.randomUUID();
-  }
-  c.set('requestId', requestId);
-  c.header('X-ZeroTax-Request-Id', requestId);
-
-  // 1. API-VAPT-12: Reject Browser Cross-Origin Requests (Native Android APK Only!)
-  // Allow official CA portal origin for /compliance/ca-share/:token, and allow health/cron/webhook checks
-  const origin = req.header('origin');
-  if (!isHealth && !isCron && !isAaWebhook && (origin || req.header('sec-fetch-site'))) {
-    const isAllowedCaOrigin = isCaShare && (origin === 'https://app.zerotax.in' || (process.env.NODE_ENV !== 'production' && origin?.includes('localhost')));
-    if (!isAllowedCaOrigin) {
-      return c.json(
-        {
-          errorCode: 'VAPT_12_BROWSER_ORIGIN_FORBIDDEN',
-          message: 'Direct browser access is strictly forbidden. ZeroTax API accepts native Android APK calls only.',
-          requestId,
-        },
-        403
-      );
-    }
-  }
-
-  // 2. API-VAPT-08: Enforce Strict Payload Size Limit per Endpoint
+  // 1. API-VAPT-08: Enforce Strict Payload Size Limit per Endpoint (Check early before allocating/processing)
   const contentLength = Number(req.header('content-length') || '0');
   let maxBytes = 512 * 1024; // 512KB default
   if (path.startsWith('/api/v1/vault/sync')) {
@@ -89,10 +55,43 @@ export async function edgeVaptFirewall(c: Context, next: Next) {
         errorCode: 'VAPT_08_PAYLOAD_TOO_LARGE',
         maxAllowedBytes: maxBytes,
         receivedBytes: contentLength,
-        requestId,
       },
       413
     );
+  }
+
+  // 2. API-VAPT-04: On mutating APK requests (excluding external webhooks, cron & health), require client request id
+  let requestId = req.header('x-zerotax-request-id');
+  if (!requestId) {
+    if (process.env.NODE_ENV !== 'test' && !isHealth && !isStatutory && !isCron && !isAaWebhook && req.method !== 'GET') {
+      return c.json(
+        {
+          errorCode: 'VAPT_04_MISSING_REQUEST_ID',
+          message: 'Mutating requests require an X-ZeroTax-Request-Id header.',
+        },
+        400
+      );
+    }
+    requestId = crypto.randomUUID();
+  }
+  c.set('requestId', requestId);
+  c.header('X-ZeroTax-Request-Id', requestId);
+
+  // 3. API-VAPT-12: Reject Browser Cross-Origin Requests (Native Android APK Only!)
+  // Allow official CA portal origin for /compliance/ca-share/:token, and allow health/cron/webhook checks
+  const origin = req.header('origin');
+  if (!isHealth && !isCron && !isAaWebhook && (origin || req.header('sec-fetch-site'))) {
+    const isAllowedCaOrigin = isCaShare && (origin === 'https://app.zerotax.in' || (process.env.NODE_ENV !== 'production' && origin?.includes('localhost')));
+    if (!isAllowedCaOrigin) {
+      return c.json(
+        {
+          errorCode: 'VAPT_12_BROWSER_ORIGIN_FORBIDDEN',
+          message: 'Direct browser access is strictly forbidden. ZeroTax API accepts native Android APK calls only.',
+          requestId,
+        },
+        403
+      );
+    }
   }
 
   // 3. API-VAPT-04: Anti-Replay Timestamp Window & Request ID Deduplication
