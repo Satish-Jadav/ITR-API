@@ -22,8 +22,8 @@ export const portalRoutes = new Hono();
 
 /**
  * 0. GET /api/v1/portal/driver-status
- * Exposes current driver status, prioritization, and gateway capabilities.
- * Priority: 1) QUICKO_ERI (Sandbox.co.in) -> 2) CBDT_DIRECT_ERI (Official ITD) -> 3) IN_APP_LIVE_DRIVER (Zero-Cost).
+ * Exposes current driver status and capabilities.
+ * Lightweight Zero-Cost In-App Live Driver.
  */
 portalRoutes.get('/driver-status', (c) => {
   const status = PortalDriverService.getDriverStatus();
@@ -32,8 +32,8 @@ portalRoutes.get('/driver-status', (c) => {
 
 /**
  * 0.1 GET /api/v1/portal/pan/:pan/verify
- * Real-time live PAN verification via Quicko / Sandbox.co.in NSDL/CBDT bridge.
- * Returns true taxpayer legal name, validity status, and entity category.
+ * Fast statutory PAN verification.
+ * Validates format, entity type, and taxpayer details u/s 139A.
  */
 portalRoutes.get('/pan/:pan/verify', async (c) => {
   const pan = (c.req.param('pan') || '').trim().toUpperCase();
