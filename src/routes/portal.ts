@@ -84,6 +84,16 @@ portalRoutes.post('/otp/request', zValidator('json', PortalOtpRequestSchema), as
 
   try {
     const result = await PortalDriverService.requestPrefillOtp(pan, body.purpose, clientIp);
+    if (!result.success) {
+      return c.json(
+        {
+          success: false,
+          errorCode: (result as any).errorCode || 'OTP_REQUEST_FAILED',
+          message: result.message,
+        },
+        400
+      );
+    }
     return c.json(result);
   } catch (err: any) {
     if (err.statusCode === 429) {
@@ -271,51 +281,9 @@ portalRoutes.post('/sync', zValidator('json', PortalSyncRequestSchema), async (c
     }
 
     if (transactions.length === 0) {
-      transactions = [
-        {
-          id: `AIS-${pan}-SAL-01`,
-          category: 'SALARY',
-          deductorOrIssuerName: 'INFOSYS LIMITED',
-          deductorTan: 'BLRI01234A',
-          grossAmount: 1250000,
-          tdsWithheld: 112500,
-          transactionDate: '2026-03-31',
-          statutoryScheduleHint: 'Salary',
-        },
-        {
-          id: `AIS-${pan}-SB-01`,
-          category: 'SAVINGS_INTEREST',
-          deductorOrIssuerName: 'STATE BANK OF INDIA',
-          deductorTan: 'SBIN0001234',
-          grossAmount: 18500,
-          tdsWithheld: 0,
-          transactionDate: '2026-03-31',
-          statutoryScheduleHint: 'OS',
-        },
-        {
-          id: `AIS-${pan}-TD-01`,
-          category: 'TIME_DEPOSIT_INTEREST',
-          deductorOrIssuerName: 'HDFC BANK LIMITED',
-          deductorTan: 'MUMH05678B',
-          grossAmount: 34200,
-          tdsWithheld: 3420,
-          transactionDate: '2026-03-31',
-          statutoryScheduleHint: 'OS',
-        },
-        {
-          id: `AIS-${pan}-DIV-01`,
-          category: 'DIVIDENDS',
-          deductorOrIssuerName: 'TATA CONSULTANCY SERVICES LTD',
-          deductorTan: 'MUMT09876C',
-          grossAmount: 15000,
-          tdsWithheld: 1500,
-          transactionDate: '2026-02-15',
-          statutoryScheduleHint: 'OS',
-        },
-      ];
-      recordCount = transactions.length;
-      aggregateGross = 1317700;
-      aggregateTds = 117420;
+      recordCount = 0;
+      aggregateGross = 0;
+      aggregateTds = 0;
     }
   }
 

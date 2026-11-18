@@ -1,7 +1,6 @@
 import crypto from 'node:crypto';
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
-import { queryDb } from '../config/supabase.js';
 
 export type PortalDriverType = 'QUICKO_ERI' | 'CBDT_DIRECT_ERI' | 'IN_APP_LIVE_DRIVER';
 
@@ -206,23 +205,10 @@ export class PortalDriverService {
       } else {
         const errText = await res.text();
         logger.warn(`[LIVE PAN VERIFY] Sandbox returned ${res.status}: ${errText}`);
-        if (res.status === 403 || res.status === 401 || errText.includes('credits') || errText.includes('quota')) {
-          logger.info(`[LIVE PAN VERIFY] Sandbox returned ${res.status}. Providing authentic profile for PAN ${pan}`);
-          const authenticName = pan === 'ABCDE1234F' ? 'VERIFIED TAXPAYER' : `TAXPAYER ${pan.slice(0, 5)}`;
-          return {
-            success: true,
-            pan,
-            fullName: authenticName,
-            status: 'VALID',
-            category: 'individual',
-            isLive: true,
-            message: 'PAN verified live against CBDT / NSDL records (Sandbox fallback active).',
-          };
-        }
         return {
           success: false,
           pan,
-          isLive: true,
+          isLive: false,
           message: `Government portal returned status ${res.status}: Unable to verify PAN.`,
         };
       }
@@ -244,7 +230,7 @@ export class PortalDriverService {
   public static async requestPrefillOtp(
     pan: string,
     purpose: string,
-    clientIp: string = '127.0.0.1'
+    _clientIp: string = '127.0.0.1'
   ): Promise<{
     success: boolean;
     driver: PortalDriverType;
@@ -338,130 +324,20 @@ export class PortalDriverService {
       }
     }
 
-    // 3. Zero-Cost In-App Live Driver
-    return this.dispatchInAppOtp(pan, purpose, clientIp);
-  }
-
-  /**
-   * Internal dispatcher for Zero-Cost In-App Live Driver OTP
-   */
-  private static async dispatchInAppOtp(
-    pan: string,
-    purpose: string,
-    clientIp: string
-  ): Promise<{
-    success: boolean;
-    driver: PortalDriverType;
-    txnId: string;
-    maskedMobile: string;
-    cooldownSeconds: number;
-    expiresAtIso: string;
-    debugTestOtp?: string;
-    message: string;
-  }> {
-    const now = Date.now();
-    const maskedPan = `${pan.slice(0, 2)}***${pan.slice(8)}`;
-
-    const panBlindIndexHmac = crypto
-      .createHmac('sha256', env.ZEROTAX_PAN_BLIND_INDEX_PEPPER)
-      .update(pan)
-      .digest('hex');
-
-    // Check cooldown
-    try {
-      const existing = await queryDb(
-        `SELECT txn_id, last_requested_at, expires_at
-         FROM portal_otp_verification_sessions
-         WHERE (pan = $1 OR pan_blind_index_hmac = $2) AND expires_at > NOW()
-         ORDER BY last_requested_at DESC LIMIT 1`,
-        [pan, panBlindIndexHmac]
-      );
-
-      if (existing.length > 0) {
-        const lastReqMs = new Date(existing[0].last_requested_at).getTime();
-        const elapsedSec = Math.floor((now - lastReqMs) / 1000);
-        if (elapsedSec < 60) {
-          const remaining = 60 - elapsedSec;
-          const err: any = new Error(`Please wait ${remaining} seconds before requesting a new OTP.`);
-          err.statusCode = 429;
-          err.cooldownSeconds = remaining;
-          throw err;
-        }
-      }
-    } catch (err: any) {
-      if (err.statusCode === 429) throw err;
-      const existingTxnId = devPanToTxnMap.get(pan);
-      if (existingTxnId) {
-        const memSession = devInMemorySessions.get(existingTxnId);
-        if (memSession && memSession.expiresAt > now) {
-          const elapsedSec = Math.floor((now - memSession.lastRequestedAt) / 1000);
-          if (elapsedSec < 60) {
-            const remaining = 60 - elapsedSec;
-            const rateErr: any = new Error(`Please wait ${remaining} seconds before requesting a new OTP.`);
-            rateErr.statusCode = 429;
-            rateErr.cooldownSeconds = remaining;
-            throw rateErr;
-          }
-        }
-      }
-    }
-
-    const rawOtp = crypto.randomInt(100000, 999999).toString();
-    const salt = crypto.randomBytes(16).toString('hex');
-    const hashedOtp = crypto.createHash('sha256').update(salt + rawOtp).digest('hex');
-
-    const txnId = crypto.randomUUID();
-    const expiresAt = now + 10 * 60 * 1000; // 10 mins
-    const expiresAtIso = new Date(expiresAt).toISOString();
-
-    try {
-      await queryDb(
-        `INSERT INTO portal_otp_verification_sessions (
-           txn_id, pan, hashed_otp, salt, purpose, attempts, verified, client_ip, expires_at, last_requested_at
-         ) VALUES ($1::uuid, $2, $3, $4, $5, 0, FALSE, $6, $7, NOW())`,
-        [txnId, pan, hashedOtp, salt, purpose, clientIp, expiresAtIso]
-      );
-    } catch (err: any) {
-      logger.warn('⚠️ portal_otp_verification_sessions DB insert failed, using fallback:', { error: err.message, txnId });
-    }
-
-    const session: OtpSession = {
-      txnId,
-      pan,
-      hashedOtp,
-      salt,
-      purpose,
-      attempts: 0,
-      verified: false,
-      verificationToken: null,
-      cpcVerificationRef: null,
-      driverOrigin: 'IN_APP_LIVE_DRIVER',
-      createdAt: now,
-      expiresAt,
-      lastRequestedAt: now,
-      rawOtp,
-    };
-    devInMemorySessions.set(txnId, session);
-    devPanToTxnMap.set(pan, txnId);
-
-    const maskedMobile = `Aadhaar-linked mobile (••••••${pan.slice(6, 10)})`;
-    logger.info(`[IN-APP LIVE DRIVER OTP] Dispatched OTP session for PAN ${maskedPan} (Txn: ${txnId}, Test OTP: ${rawOtp})`);
-
     return {
-      success: true,
+      success: false,
       driver: 'IN_APP_LIVE_DRIVER',
-      txnId,
-      maskedMobile,
-      cooldownSeconds: 60,
-      expiresAtIso,
-      debugTestOtp: rawOtp,
-      message: `Session initialized for PAN ${maskedPan}. OTP dispatched to Aadhaar-registered mobile (Test OTP: ${rawOtp}).`,
+      txnId: '',
+      maskedMobile: '',
+      cooldownSeconds: 0,
+      expiresAtIso: '',
+      message: 'Direct Aadhaar OTP API requires active CBDT/ERI credentials. Please log in directly via the Official ITD Web Login to receive official OTP from Income Tax Department.',
     };
   }
 
   /**
    * Verify OTP and optionally fetch live prefill:
-   * Prioritizes Quicko -> CBDT Direct -> In-App Live Driver verification.
+   * Prioritizes Quicko -> CBDT Direct.
    */
   public static async verifyPrefillOtp(
     pan: string,
@@ -516,10 +392,10 @@ export class PortalDriverService {
           };
         } else {
           const errText = await res.text();
-          logger.warn(`[QUICKO VERIFY] Quicko verification failed (${res.status}): ${errText}. Falling back to In-App session verification.`);
+          logger.warn(`[QUICKO VERIFY] Quicko verification failed (${res.status}): ${errText}.`);
         }
       } catch (err: any) {
-        logger.warn(`[QUICKO VERIFY] Network error: ${err.message}. Falling back to In-App session verification.`);
+        logger.warn(`[QUICKO VERIFY] Network error: ${err.message}.`);
       }
     }
 
@@ -552,178 +428,17 @@ export class PortalDriverService {
           };
         } else {
           const errText = await res.text();
-          logger.warn(`[CBDT VERIFY] CBDT verification failed (${res.status}): ${errText}. Falling back to local session.`);
+          logger.warn(`[CBDT VERIFY] CBDT verification failed (${res.status}): ${errText}.`);
         }
       } catch (err: any) {
-        logger.warn(`[CBDT VERIFY] CBDT network error: ${err.message}. Falling back to local session.`);
+        logger.warn(`[CBDT VERIFY] CBDT network error: ${err.message}.`);
       }
     }
 
-    // 3. In-App Live Driver verification (Postgres / memory session)
-    return this.verifyInAppOtp(pan, txnId, otp);
-  }
-
-  private static async verifyInAppOtp(
-    pan: string,
-    txnId: string,
-    otp: string
-  ): Promise<{
-    success: boolean;
-    driver: PortalDriverType;
-    txnId: string;
-    verificationToken: string;
-    cpcVerificationRef: string;
-    verifiedAtIso: string;
-    message: string;
-  }> {
-    const now = Date.now();
-    let session: OtpSession | null = null;
-
-    try {
-      const rows = await queryDb(
-        `SELECT txn_id, pan, hashed_otp, salt, purpose, attempts, verified, verification_token, cpc_verification_ref, expires_at
-         FROM portal_otp_verification_sessions
-         WHERE txn_id = $1::uuid`,
-        [txnId]
-      );
-
-      if (rows.length > 0) {
-        const r = rows[0];
-        session = {
-          txnId: r.txn_id,
-          pan: r.pan,
-          hashedOtp: r.hashed_otp,
-          salt: r.salt,
-          purpose: r.purpose,
-          attempts: Number(r.attempts || 0),
-          verified: Boolean(r.verified),
-          verificationToken: r.verification_token,
-          cpcVerificationRef: r.cpc_verification_ref,
-          driverOrigin: 'IN_APP_LIVE_DRIVER',
-          createdAt: 0,
-          expiresAt: new Date(r.expires_at).getTime(),
-          lastRequestedAt: 0,
-        };
-      }
-    } catch {
-      session = devInMemorySessions.get(txnId) || null;
-    }
-
-    if (!session) {
-      session = devInMemorySessions.get(txnId) || null;
-    }
-
-    if (!session || session.pan !== pan) {
-      if ((otp === '123456' || otp === '999999') && /^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan)) {
-        const token = crypto.randomBytes(32).toString('hex');
-        const cpcRef = `CPC/EVC/2026-27/${crypto.randomInt(1000000, 9999999)}`;
-        const synthSession: OtpSession = {
-          txnId,
-          pan,
-          hashedOtp: '',
-          salt: '',
-          purpose: 'PORTAL_SYNC',
-          attempts: 1,
-          verified: true,
-          verificationToken: token,
-          cpcVerificationRef: cpcRef,
-          driverOrigin: 'IN_APP_LIVE_DRIVER',
-          createdAt: now,
-          expiresAt: now + 600000,
-          lastRequestedAt: now,
-        };
-        devInMemorySessions.set(txnId, synthSession);
-        try {
-          await queryDb(
-            `INSERT INTO portal_otp_verification_sessions (
-               txn_id, pan, hashed_otp, salt, purpose, attempts, verified, verification_token, cpc_verification_ref, client_ip, expires_at, last_requested_at
-             ) VALUES ($1::uuid, $2, 'TEST_OTP', 'SALT', 'PORTAL_SYNC', 1, TRUE, $3, $4, '127.0.0.1', $5, NOW())
-             ON CONFLICT (txn_id) DO UPDATE SET verified = TRUE, verification_token = $3, cpc_verification_ref = $4`,
-            [txnId, pan, token, cpcRef, new Date(now + 600000).toISOString()]
-          );
-        } catch {}
-        return {
-          success: true,
-          driver: 'IN_APP_LIVE_DRIVER',
-          txnId,
-          verificationToken: token,
-          cpcVerificationRef: cpcRef,
-          verifiedAtIso: new Date().toISOString(),
-          message: 'OTP verified successfully.',
-        };
-      }
-      const err: any = new Error('OTP session expired or not found. Please request a new OTP.');
-      err.statusCode = 404;
-      err.errorCode = 'INVALID_SESSION';
-      throw err;
-    }
-
-    if (session.expiresAt < now) {
-      devInMemorySessions.delete(txnId);
-      devPanToTxnMap.delete(pan);
-      const err: any = new Error('OTP has expired. Please request a new OTP.');
-      err.statusCode = 410;
-      err.errorCode = 'OTP_EXPIRED';
-      throw err;
-    }
-
-    if (session.attempts >= 3) {
-      devInMemorySessions.delete(txnId);
-      devPanToTxnMap.delete(pan);
-      const err: any = new Error('Maximum OTP verification attempts (3) exceeded. Please request a new OTP.');
-      err.statusCode = 429;
-      err.errorCode = 'MAX_ATTEMPTS_EXCEEDED';
-      throw err;
-    }
-
-    session.attempts += 1;
-
-    try {
-      await queryDb(
-        `UPDATE portal_otp_verification_sessions SET attempts = attempts + 1 WHERE txn_id = $1::uuid`,
-        [txnId]
-      );
-    } catch {}
-
-    const candidateHash = crypto.createHash('sha256').update(session.salt + otp).digest('hex');
-    const isMasterBypass = otp === '123456' || otp === '999999' || (Boolean(session.rawOtp) && otp === session.rawOtp);
-    if (candidateHash !== session.hashedOtp && !isMasterBypass) {
-      const remaining = 3 - session.attempts;
-      const err: any = new Error(`Incorrect OTP. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.`);
-      err.statusCode = 400;
-      err.errorCode = 'INVALID_OTP';
-      err.attemptsRemaining = remaining;
-      throw err;
-    }
-
-    const verificationToken = crypto.randomBytes(32).toString('hex');
-    const cpcVerificationRef = `CPC/EVC/2026-27/${crypto.randomInt(1000000, 9999999)}`;
-    const verifiedAt = new Date().toISOString();
-
-    session.verified = true;
-    session.verificationToken = verificationToken;
-    session.cpcVerificationRef = cpcVerificationRef;
-
-    try {
-      await queryDb(
-        `UPDATE portal_otp_verification_sessions
-         SET verified = TRUE, verification_token = $1, cpc_verification_ref = $2
-         WHERE txn_id = $3::uuid`,
-        [verificationToken, cpcVerificationRef, txnId]
-      );
-    } catch (dbErr: any) {
-      logger.warn('Failed to update verified status in DB:', dbErr.message);
-    }
-
-    return {
-      success: true,
-      driver: 'IN_APP_LIVE_DRIVER',
-      txnId,
-      verificationToken,
-      cpcVerificationRef,
-      verifiedAtIso: verifiedAt,
-      message: 'OTP verified successfully u/s 140A.',
-    };
+    const err: any = new Error('No active ERI gateway session found. Please authenticate via Official ITD Web Login.');
+    err.statusCode = 400;
+    err.errorCode = 'ERI_GATEWAY_NOT_CONFIGURED';
+    throw err;
   }
 
   /**
