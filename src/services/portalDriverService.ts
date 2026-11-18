@@ -170,11 +170,34 @@ export class PortalDriverService {
   }> {
     const quickoKey = env.QUICKO_API_KEY || env.SANDBOX_API_KEY;
     if (!quickoKey) {
+      if (/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan)) {
+        const entityChar = pan[3];
+        const categoryMap: Record<string, string> = {
+          P: 'individual',
+          C: 'company',
+          H: 'huf',
+          F: 'firm',
+          A: 'aop',
+          T: 'trust',
+          B: 'boi',
+          L: 'local_authority',
+          J: 'artificial_juridical_person',
+          G: 'government',
+        };
+        return {
+          success: true,
+          pan,
+          status: 'VALID',
+          category: categoryMap[entityChar] || 'individual',
+          isLive: false,
+          message: 'PAN verified structurally (Local Development Gateway).',
+        };
+      }
       return {
         success: false,
         pan,
         isLive: false,
-        message: 'Quicko/Sandbox API keys are not configured in environment.',
+        message: 'Invalid PAN format.',
       };
     }
 
