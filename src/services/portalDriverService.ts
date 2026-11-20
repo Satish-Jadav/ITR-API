@@ -99,11 +99,10 @@ export class PortalDriverService {
       G: 'government',
     };
 
-    const isTestPan = pan === 'ABCDE1234F';
     return {
       success: true,
       pan,
-      fullName: isTestPan ? 'VERIFIED TAXPAYER' : `Verified Assessee (${pan.slice(0, 5)}***)`,
+      fullName: `Verified Assessee (${pan.slice(0, 5)}***)`,
       status: 'VALID',
       category: categoryMap[entityChar] || 'individual',
       isLive: false,
