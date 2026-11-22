@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Award, CheckCircle2, ShieldCheck, Zap, ArrowRight, AlertTriangle, FileCheck2 } from 'lucide-react';
+import { Award, CheckCircle2, ShieldCheck, Zap, ArrowLeft, ArrowRight, AlertTriangle, FileCheck2 } from 'lucide-react';
 import { RegimeComparison, TaxPayerProfile, IncomeDetails, DeductionsDetails } from '../types';
 
 interface Step4Props {
@@ -219,9 +219,10 @@ export default function Step4Regime({
       <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3">
         <button
           onClick={onPrev}
-          className="w-full sm:w-auto px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs sm:text-sm rounded-xl transition-colors"
+          className="w-full sm:w-auto px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs sm:text-sm rounded-xl transition-colors flex items-center justify-center space-x-1.5"
         >
-          ← Edit Deductions
+          <ArrowLeft className="w-4 h-4" />
+          <span>Edit Deductions</span>
         </button>
         <button
           onClick={onOpenApproval}
@@ -229,7 +230,7 @@ export default function Step4Regime({
         >
           <FileCheck2 className="w-4 h-4" />
           <span>Proceed to Final Approval &amp; Filing</span>
-          <span>→</span>
+          <ArrowRight className="w-4 h-4" />
         </button>
       </div>
     </div>

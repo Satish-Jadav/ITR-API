@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { User, ShieldCheck, CheckCircle2, Building, CreditCard, Calendar, Hash } from 'lucide-react';
+import { User, ShieldCheck, CheckCircle2, Building, CreditCard, Calendar, Hash, ArrowRight } from 'lucide-react';
 import { TaxPayerProfile } from '../types';
 
 interface Step1Props {
@@ -148,7 +148,7 @@ export default function Step1Identity({ profile, onChange, onNext }: Step1Props)
           className="w-full sm:w-auto px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-xl shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center space-x-2"
         >
           <span>Confirm &amp; Proceed to Income</span>
-          <span>→</span>
+          <ArrowRight className="w-4 h-4" />
         </button>
       </div>
     </div>

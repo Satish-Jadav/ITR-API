@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { IndianRupee, Briefcase, FileText, CheckCircle2, TrendingUp, AlertCircle } from 'lucide-react';
+import { IndianRupee, Briefcase, FileText, CheckCircle2, TrendingUp, AlertCircle, ArrowLeft, ArrowRight } from 'lucide-react';
 import { IncomeDetails } from '../types';
 
 interface Step2Props {
@@ -149,16 +149,17 @@ export default function Step2Income({ income, onChange, onNext, onPrev }: Step2P
       <div className="pt-2 flex items-center justify-between">
         <button
           onClick={onPrev}
-          className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs sm:text-sm rounded-xl transition-colors"
+          className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs sm:text-sm rounded-xl transition-colors flex items-center space-x-1.5"
         >
-          ← Back to Identity
+          <ArrowLeft className="w-4 h-4" />
+          <span>Back to Identity</span>
         </button>
         <button
           onClick={onNext}
-          className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-medium rounded-xl shadow-lg shadow-emerald-600/20 transition-all flex items-center space-x-1"
+          className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-medium rounded-xl shadow-lg shadow-emerald-600/20 transition-all flex items-center space-x-1.5"
         >
           <span>Continue to Deductions</span>
-          <span>→</span>
+          <ArrowRight className="w-4 h-4" />
         </button>
       </div>
     </div>
