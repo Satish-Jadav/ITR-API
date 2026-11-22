@@ -1,7 +1,7 @@
 {
-  "name": "zerotax-api",
+  "name": "zerotax",
   "version": "2026.1.0",
-  "description": "ZeroTax Production Node.js + Vercel Serverless API with Supabase & VAPT Hardening",
+  "description": "ZeroTax — Next.js Direct-to-CBDT ITR Web & API Platform",
   "private": true,
   "type": "module",
   "engines": {
@@ -9,12 +9,9 @@
   },
   "scripts": {
     "dev": "next dev",
-    "dev:api": "node init && tsx watch src/devServer.ts",
     "build": "next build",
-    "vercel-build": "next build",
     "start": "next start",
     "lint": "tsc --noEmit",
-    "generate-keys": "node scripts/generate-keys.js",
     "test": "tsx scripts/test-api.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "node scripts/db-push.js",
@@ -22,7 +19,6 @@
   },
   "dependencies": {
     "@google/genai": "^3.0.0",
-    "@hono/node-server": "^1.13.7",
     "@hono/zod-validator": "^0.4.1",
     "@neondatabase/serverless": "^0.10.1",
     "@supabase/supabase-js": "^2.46.1",
@@ -51,7 +47,6 @@
     "@types/react": "19.3.0",
     "drizzle-kit": "^0.31.11",
     "tsx": "^4.19.2",
-    "typescript": "^5.6.3",
-    "vercel": "^38.0.0"
+    "typescript": "^5.6.3"
   }
 }
