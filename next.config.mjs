@@ -3,7 +3,6 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   compress: true,
-  serverExternalPackages: ['pg', 'pino', 'pino-pretty'],
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production' ? { exclude: ['error', 'warn'] } : false,
   },
@@ -16,7 +15,6 @@ const nextConfig = {
       '.mjs': ['.mts', '.mjs'],
     };
     if (!dev) {
-      // Disable heavy filesystem disk caching during production builds to eliminate bloated 200MB build cache uploads
       config.cache = false;
     }
     return config;
@@ -26,6 +24,20 @@ const nextConfig = {
   },
   eslint: {
     ignoreDuringBuilds: true,
+  },
+  async headers() {
+    return [
+      {
+        source: '/api/:path*',
+        headers: [
+          { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+          { key: 'Permissions-Policy', value: 'geolocation=(), microphone=(), camera=()' },
+        ],
+      },
+    ];
   },
   async rewrites() {
     return [
