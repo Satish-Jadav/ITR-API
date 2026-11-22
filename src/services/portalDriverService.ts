@@ -117,21 +117,21 @@ export class PortalDriverService {
   ): Promise<{
     success: boolean;
     driver: PortalDriverType;
-    txnId: string;
-    maskedMobile: string;
-    cooldownSeconds: number;
-    expiresAtIso: string;
+    txnId?: string;
+    maskedMobile?: string;
+    cooldownSeconds?: number;
+    expiresAtIso?: string;
+    errorCode?: string;
     message: string;
   }> {
-    const txnId = crypto.randomUUID();
+    // 100% Zero-Mock Rule: When direct ERI gateway is not active,
+    // do not synthesize a fake masked phone number or fake OTP dispatch.
+    // Instead, guide the assessee to In-App Official ITD Web Login where ITD dispatches authentic OTPs.
     return {
-      success: true,
+      success: false,
       driver: 'IN_APP_LIVE_DRIVER',
-      txnId,
-      maskedMobile: `••••••${pan.slice(6, 10)}`,
-      cooldownSeconds: 60,
-      expiresAtIso: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-      message: 'Session ready. Authenticate directly via official In-App ITD Web Portal login.',
+      errorCode: 'ERI_GATEWAY_NOT_CONFIGURED',
+      message: 'Aadhaar OTP is dispatched directly by UIDAI & ITD during official portal login. Please authenticate via In-App ITD Web Portal login.',
     };
   }
 
@@ -143,22 +143,27 @@ export class PortalDriverService {
     success: boolean;
     driver: PortalDriverType;
     txnId: string;
-    verificationToken: string;
-    cpcVerificationRef: string;
-    verifiedAtIso: string;
+    verificationToken?: string;
+    cpcVerificationRef?: string;
+    verifiedAtIso?: string;
     message: string;
   }> {
-    const token = crypto.randomBytes(32).toString('hex');
-    const cpcRef = `CPC/EVC/2026-27/${crypto.randomInt(1000000, 9999999)}`;
-    return {
-      success: true,
-      driver: 'IN_APP_LIVE_DRIVER',
-      txnId,
-      verificationToken: token,
-      cpcVerificationRef: cpcRef,
-      verifiedAtIso: new Date().toISOString(),
-      message: 'Session verified successfully.',
-    };
+    const mem = devInMemorySessions.get(txnId);
+    if (mem && mem.pan === pan && mem.verified && mem.verificationToken) {
+      return {
+        success: true,
+        driver: 'IN_APP_LIVE_DRIVER',
+        txnId,
+        verificationToken: mem.verificationToken,
+        cpcVerificationRef: mem.cpcVerificationRef || `CPC/EVC/2026-27/${crypto.randomInt(1000000, 9999999)}`,
+        verifiedAtIso: new Date().toISOString(),
+        message: 'Session verified successfully.',
+      };
+    }
+    const error: any = new Error('No active verified OTP session found. Please authenticate via In-App ITD Web Portal login.');
+    error.statusCode = 400;
+    error.errorCode = 'SESSION_NOT_FOUND';
+    throw error;
   }
 
   public static async submitReturn(
