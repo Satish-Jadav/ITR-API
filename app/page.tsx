@@ -103,7 +103,7 @@ export default function FilingWizardPage() {
       />
 
       {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-2.5 sm:p-6 lg:p-8 flex flex-col">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-2.5 sm:p-6 lg:p-8 pb-24 sm:pb-8 flex flex-col">
         
         {/* Step Progress Bar (Responsive 360px S23 to 4K) */}
         <div className="mb-4 sm:mb-6 bg-slate-900/80 border border-slate-800/80 rounded-xl p-2 sm:p-3">
@@ -269,13 +269,50 @@ export default function FilingWizardPage() {
 
       </main>
 
+      {/* Mobile Sticky Quick Summary & Action Bar (Samsung S23 & Mobile Viewports) */}
+      <div className="fixed bottom-0 left-0 right-0 z-30 sm:hidden bg-slate-900/95 backdrop-blur-xl border-t border-slate-800/90 px-3.5 py-2.5 flex items-center justify-between shadow-2xl">
+        <div className="flex flex-col">
+          <div className="flex items-center space-x-1.5">
+            <span className="text-[10px] uppercase font-bold text-slate-400">Tax Payable:</span>
+            <span className="font-mono text-sm font-bold text-white">
+              ₹{regimeComparison.newRegime.totalTaxPayable.toLocaleString('en-IN')}
+            </span>
+          </div>
+          <div className="flex items-center space-x-1 text-[10px] text-emerald-400 font-medium">
+            <span>{regimeComparison.recommended} Regime</span>
+            <span>•</span>
+            <span>Save ₹{regimeComparison.savingsAmount.toLocaleString('en-IN')}</span>
+          </div>
+        </div>
+
+        <div className="flex items-center space-x-2">
+          {activeStep < 4 ? (
+            <button
+              onClick={() => setActiveStep((s) => Math.min(4, s + 1))}
+              className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl flex items-center space-x-1 shadow-lg shadow-emerald-500/20 active:scale-95 transition-all"
+            >
+              <span>Step {activeStep + 1}</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          ) : (
+            <button
+              onClick={() => setIsApprovalOpen(true)}
+              className="px-3.5 py-2 bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-bold text-xs rounded-xl flex items-center space-x-1 shadow-lg shadow-emerald-500/20 active:scale-95 transition-all"
+            >
+              <span>File Now</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Floating Action Button for Gemini Copilot on Mobile */}
       <button
         onClick={() => setIsAiOpen(true)}
-        className="fixed bottom-4 right-4 z-40 sm:hidden w-12 h-12 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-2xl flex items-center justify-center shadow-emerald-500/30 active:scale-95 transition-all"
+        className="fixed bottom-16 right-3.5 z-40 sm:hidden w-11 h-11 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-2xl flex items-center justify-center shadow-emerald-500/30 active:scale-95 transition-all border border-emerald-300/30"
         title="Open Chrome Gemini AI"
       >
-        <Sparkles className="w-6 h-6 text-amber-300" />
+        <Sparkles className="w-5 h-5 text-amber-300" />
       </button>
 
       {/* Chrome Gemini AI Copilot Drawer */}
