@@ -77,7 +77,7 @@ const dbHealthHandler = async (c: any) => {
 app.get('/health/db', dbHealthHandler);
 app.get('/api/v1/compliance/db-health', dbHealthHandler);
 
-// 4. API v1 Domain Routes
+// 4. API v1 Domain Routes (Both /api/v1/* and /v1/* supported for api subdomain)
 app.route('/api/v1/auth', authRoutes);
 app.route('/api/v1/statutory', statutoryRoutes);
 app.route('/api/v1/vault', vaultRoutes);
@@ -87,6 +87,16 @@ app.route('/api/v1/chat', chatRoutes);
 app.route('/api/v1/compliance', complianceRoutes);
 app.route('/api/v1/portal', portalRoutes);
 app.route('/api/v1/cron', cronRoutes);
+
+app.route('/v1/auth', authRoutes);
+app.route('/v1/statutory', statutoryRoutes);
+app.route('/v1/vault', vaultRoutes);
+app.route('/v1/aa', aaRoutes);
+app.route('/v1/ai', aiRoutes);
+app.route('/v1/chat', chatRoutes);
+app.route('/v1/compliance', complianceRoutes);
+app.route('/v1/portal', portalRoutes);
+app.route('/v1/cron', cronRoutes);
 
 // 5. API-VAPT-11: Global Error Handler with Rich Server-Side Logging
 app.onError((err, c) => {

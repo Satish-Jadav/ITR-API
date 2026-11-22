@@ -77,16 +77,34 @@ export async function edgeVaptFirewall(c: Context, next: Next) {
   c.set('requestId', requestId);
   c.header('X-ZeroTax-Request-Id', requestId);
 
-  // 3. API-VAPT-12: Reject Browser Cross-Origin Requests (Native Android APK Only!)
-  // Allow official CA portal origin for /compliance/ca-share/:token, and allow health/cron/webhook checks
+  // 3. API-VAPT-12: Browser Origin & CORS Security Control
+  // Allow official ZeroTax Web UI & CA portal origins, while rejecting unauthorized external scrapers
   const origin = req.header('origin');
-  if (!isHealth && !isCron && !isAaWebhook && (origin || req.header('sec-fetch-site'))) {
-    const isAllowedCaOrigin = isCaShare && (origin === 'https://app.zerotax.in' || (process.env.NODE_ENV !== 'production' && origin?.includes('localhost')));
+  const allowedWebOrigins = [
+    'https://zerotax.in',
+    'https://app.zerotax.in',
+    'https://web.zerotax.in',
+    'https://api.zerotax.in',
+  ];
+  const isLocalOrigin = process.env.NODE_ENV !== 'production' && !!origin?.includes('localhost');
+  const isVercelPreview = !!origin?.endsWith('.vercel.app');
+  const isAuthorizedOrigin = !!origin && (allowedWebOrigins.includes(origin) || isLocalOrigin || isVercelPreview);
+
+  if (origin && isAuthorizedOrigin) {
+    c.header('Access-Control-Allow-Origin', origin);
+    c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-ZeroTax-Request-Id, X-ZeroTax-Timestamp');
+    c.header('Access-Control-Allow-Credentials', 'true');
+    if (req.method === 'OPTIONS') {
+      return c.text('', 204);
+    }
+  } else if (!isHealth && !isCron && !isAaWebhook && (origin || req.header('sec-fetch-site'))) {
+    const isAllowedCaOrigin = isCaShare && (origin === 'https://app.zerotax.in' || isLocalOrigin);
     if (!isAllowedCaOrigin) {
       return c.json(
         {
           errorCode: 'VAPT_12_BROWSER_ORIGIN_FORBIDDEN',
-          message: 'Direct browser access is strictly forbidden. ZeroTax API accepts native Android APK calls only.',
+          message: 'Direct unauthorized browser access is strictly forbidden.',
           requestId,
         },
         403

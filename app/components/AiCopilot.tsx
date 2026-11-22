@@ -121,7 +121,8 @@ Provide concise, accurate, statutory CBDT tax advice. Never assume mock values. 
         ]);
       } else {
         // Fallback to Cloud Gemini or Statutory Expert Engine
-        const res = await fetch('/api/v1/chat', {
+        const apiBase = process.env.NEXT_PUBLIC_API_URL || '';
+        const res = await fetch(`${apiBase}/api/v1/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
