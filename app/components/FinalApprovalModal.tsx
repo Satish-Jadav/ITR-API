@@ -25,12 +25,15 @@ export default function FinalApprovalModal({
     ackNumber: string;
     timestamp: string;
     hash: string;
+    ay: string;
+    section: string;
   } | null>(null);
 
   if (!isOpen) return null;
 
   const isNew = regime.recommended === 'NEW';
   const selectedRegimeData = isNew ? regime.newRegime : regime.oldRegime;
+  const isITRU = profile.filingSection === '139(8A)';
 
   const handleTransmit = async () => {
     if (!agreed || submitting) return;
@@ -41,9 +44,11 @@ export default function FinalApprovalModal({
       await new Promise((r) => setTimeout(r, 1400)); // Statutory transmission handshake
 
       setFiledReceipt({
-        ackNumber: `ACK/2026/${Math.floor(1000000000 + Math.random() * 9000000000)}`,
+        ackNumber: `ACK/${profile.assessmentYear.replace('-', '')}/${Math.floor(1000000000 + Math.random() * 9000000000)}`,
         timestamp: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
         hash: `SHA256:${Math.random().toString(36).substring(2, 15).toUpperCase()}`,
+        ay: profile.assessmentYear,
+        section: profile.filingSection,
       });
     } finally {
       setSubmitting(false);
@@ -64,7 +69,9 @@ export default function FinalApprovalModal({
               <h3 className="text-base font-bold text-white tracking-tight">
                 CBDT Direct-Transmission Approval
               </h3>
-              <p className="text-xs text-slate-400">Assessment Year 2026-27 (FY 2025-26)</p>
+              <p className="text-xs text-slate-400">
+                Assessment Year {profile.assessmentYear} (FY {profile.financialYear}) • u/s {profile.filingSection}
+              </p>
             </div>
           </div>
           <button
@@ -83,7 +90,7 @@ export default function FinalApprovalModal({
               <div className="bg-amber-950/30 border border-amber-800/40 rounded-2xl p-3.5 flex items-start space-x-3">
                 <Lock className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
                 <p className="text-xs text-amber-200/90 leading-relaxed">
-                  <strong className="text-amber-100">Statutory Mandate:</strong> Submissions to the Income Tax Department portal require explicit taxpayer digital sign-off under Section 139(1) of the Income Tax Act.
+                  <strong className="text-amber-100">Statutory Mandate:</strong> Submissions to the Income Tax Department portal under <strong>Section {profile.filingSection}</strong> require explicit taxpayer digital sign-off.
                 </p>
               </div>
 
@@ -98,8 +105,12 @@ export default function FinalApprovalModal({
                   <span className="font-mono font-bold text-white tracking-wider">{profile.pan}</span>
                 </div>
                 <div className="flex justify-between py-1 border-b border-slate-800/80">
+                  <span className="text-slate-400">Assessment Year &amp; Section</span>
+                  <span className="font-bold text-emerald-400">AY {profile.assessmentYear} (Sec {profile.filingSection})</span>
+                </div>
+                <div className="flex justify-between py-1 border-b border-slate-800/80">
                   <span className="text-slate-400">Optimal Filing Regime</span>
-                  <span className="font-bold text-emerald-400">{regime.recommended} Tax Regime</span>
+                  <span className="font-bold text-white">{regime.recommended} Tax Regime</span>
                 </div>
                 <div className="flex justify-between py-1 border-b border-slate-800/80">
                   <span className="text-slate-400">Gross Total Income</span>
@@ -115,6 +126,12 @@ export default function FinalApprovalModal({
                     ₹{selectedRegimeData.totalTaxPayable.toLocaleString('en-IN')}
                   </span>
                 </div>
+                {isITRU && regime.itrUAdditionalTax && regime.itrUAdditionalTax > 0 ? (
+                  <div className="flex justify-between py-1 text-amber-300 font-mono">
+                    <span>Sec 140B Additional Tax</span>
+                    <span>₹{regime.itrUAdditionalTax.toLocaleString('en-IN')}</span>
+                  </div>
+                ) : null}
                 <div className="flex justify-between pt-1 text-[11px] text-slate-400 border-t border-slate-800/80">
                   <span>Refund Direct-Credit Account</span>
                   <span className="font-mono text-slate-300">{profile.bankName} ({profile.bankAccountMasked})</span>
@@ -130,7 +147,7 @@ export default function FinalApprovalModal({
                   className="w-4 h-4 mt-0.5 rounded border-slate-700 text-emerald-500 focus:ring-emerald-500 bg-slate-900"
                 />
                 <span className="text-xs text-slate-300 leading-relaxed">
-                  I, <strong>{profile.name}</strong>, holding PAN <strong>{profile.pan}</strong>, hereby verify and approve the final computation. I authorize ZeroTax to digitally package and transmit this return to the CBDT e-Filing portal under Section 139(1).
+                  I, <strong>{profile.name}</strong>, holding PAN <strong>{profile.pan}</strong>, hereby verify and approve the final return computation for <strong>AY {profile.assessmentYear}</strong>. I authorize ZeroTax to digitally package and transmit this return to the CBDT e-Filing portal under <strong>Section {profile.filingSection}</strong>.
                 </span>
               </label>
 
@@ -155,7 +172,7 @@ export default function FinalApprovalModal({
                   ) : (
                     <>
                       <CheckCircle2 className="w-4 h-4" />
-                      <span>Approve &amp; Transmit Return</span>
+                      <span>Approve &amp; Transmit Return (AY {profile.assessmentYear})</span>
                     </>
                   )}
                 </button>
@@ -169,10 +186,10 @@ export default function FinalApprovalModal({
               </div>
               <div>
                 <h4 className="text-lg font-black text-white">
-                  ITR Successfully Transmitted to CBDT!
+                  AY {filedReceipt.ay} Return Transmitted to CBDT!
                 </h4>
                 <p className="text-xs text-slate-400 mt-1">
-                  Your return has been received by the Centralized Processing Centre (CPC), Bengaluru.
+                  Your return has been received by the Centralized Processing Centre (CPC), Bengaluru under Section {filedReceipt.section}.
                 </p>
               </div>
 
@@ -180,6 +197,10 @@ export default function FinalApprovalModal({
                 <div className="flex justify-between">
                   <span className="text-slate-400">Acknowledgement No:</span>
                   <span className="font-mono font-bold text-emerald-400">{filedReceipt.ackNumber}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Assessment Year:</span>
+                  <span className="font-mono font-semibold text-white">AY {filedReceipt.ay}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Filing Timestamp:</span>

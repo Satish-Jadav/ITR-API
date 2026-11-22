@@ -1,58 +1,98 @@
-import { IncomeDetails, DeductionsDetails, RegimeComparison } from '../types';
+import { IncomeDetails, DeductionsDetails, RegimeComparison, AssessmentYear, FilingSection } from '../types';
 
 /**
- * CBDT Tax Calculator for AY 2026-27 (FY 2025-26)
- * Real statutory slab mathematics with Section 87A rebate & 4% Health & Education Cess
+ * CBDT Tax Calculator supporting:
+ * - AY 2026-27 (FY 2025-26): Current Year (₹75,000 New Regime Std Deduction, 3-7-10-12-15 Slabs)
+ * - AY 2025-26 (FY 2024-25): Previous Year (₹75,000 New Regime Std Deduction, Belated/Revised/ITR-U)
+ * - AY 2024-25 (FY 2023-24): Previous Year (₹50,000 New Regime Std Deduction, 3-6-9-12-15 Slabs, ITR-U u/s 139(8A))
  */
 export function calculateTaxes(
   income: IncomeDetails,
-  deductions: DeductionsDetails
+  deductions: DeductionsDetails,
+  assessmentYear: AssessmentYear = '2026-27',
+  filingSection: FilingSection = '139(1)'
 ): RegimeComparison {
+  const isAY2024 = assessmentYear === '2024-25';
+  
+  // Standard Deduction in New Regime:
+  // AY 2024-25: ₹50,000
+  // AY 2025-26 & AY 2026-27: ₹75,000
+  const stdDeductionNew = isAY2024 ? 50000 : 75000;
+
   // ----------------------------------------------------
-  // 1. NEW REGIME (Section 115BAC - Budget 2024/2025/2026)
-  // Standard Deduction: ₹75,000 for salaried employees
+  // 1. NEW REGIME (Section 115BAC)
   // ----------------------------------------------------
   const grossSalary = income.grossSalary;
-  const netSalaryNew = Math.max(0, grossSalary - income.standardDeductionNew);
+  const netSalaryNew = Math.max(0, grossSalary - stdDeductionNew);
   const otherIncomeTotal = income.savingsInterest + income.fdInterest + income.otherIncome;
   
-  // Under New Regime: Sec 24(b) on self-occupied is NOT allowed. Sec 80CCD(2) employer NPS is allowed.
   const grossTotalIncomeNew = netSalaryNew + otherIncomeTotal;
-  const totalDeductionsNew = deductions.sec80CCD_2; // Only employer NPS allowed
+  const totalDeductionsNew = deductions.sec80CCD_2; // Only employer NPS allowed in New Regime
   const taxableIncomeNew = Math.max(0, grossTotalIncomeNew - totalDeductionsNew);
 
-  // New Regime Slabs:
-  // 0 to 3,00,000: Nil
-  // 3,00,001 to 7,00,000: 5%
-  // 7,00,001 to 10,00,000: 10%
-  // 10,00,001 to 12,00,000: 15%
-  // 12,00,001 to 15,00,000: 20%
-  // Above 15,00,000: 30%
   let basicTaxNew = 0;
-  if (taxableIncomeNew > 1500000) {
-    basicTaxNew += (taxableIncomeNew - 1500000) * 0.30;
-    basicTaxNew += 300000 * 0.20; // 12L to 15L
-    basicTaxNew += 200000 * 0.15; // 10L to 12L
-    basicTaxNew += 300000 * 0.10; // 7L to 10L
-    basicTaxNew += 400000 * 0.05; // 3L to 7L
-  } else if (taxableIncomeNew > 1200000) {
-    basicTaxNew += (taxableIncomeNew - 1200000) * 0.20;
-    basicTaxNew += 200000 * 0.15;
-    basicTaxNew += 300000 * 0.10;
-    basicTaxNew += 400000 * 0.05;
-  } else if (taxableIncomeNew > 1000000) {
-    basicTaxNew += (taxableIncomeNew - 1000000) * 0.15;
-    basicTaxNew += 300000 * 0.10;
-    basicTaxNew += 400000 * 0.05;
-  } else if (taxableIncomeNew > 700000) {
-    basicTaxNew += (taxableIncomeNew - 700000) * 0.10;
-    basicTaxNew += 400000 * 0.05;
-  } else if (taxableIncomeNew > 300000) {
-    basicTaxNew += (taxableIncomeNew - 300000) * 0.05;
+
+  if (isAY2024) {
+    // AY 2024-25 Slabs:
+    // 0 to 3,00,000: Nil
+    // 3,00,001 to 6,00,000: 5%
+    // 6,00,001 to 9,00,000: 10%
+    // 9,00,001 to 12,00,000: 15%
+    // 12,00,001 to 15,00,000: 20%
+    // Above 15,00,000: 30%
+    if (taxableIncomeNew > 1500000) {
+      basicTaxNew += (taxableIncomeNew - 1500000) * 0.30;
+      basicTaxNew += 300000 * 0.20; // 12L to 15L
+      basicTaxNew += 300000 * 0.15; // 9L to 12L
+      basicTaxNew += 300000 * 0.10; // 6L to 9L
+      basicTaxNew += 300000 * 0.05; // 3L to 6L
+    } else if (taxableIncomeNew > 1200000) {
+      basicTaxNew += (taxableIncomeNew - 1200000) * 0.20;
+      basicTaxNew += 300000 * 0.15;
+      basicTaxNew += 300000 * 0.10;
+      basicTaxNew += 300000 * 0.05;
+    } else if (taxableIncomeNew > 900000) {
+      basicTaxNew += (taxableIncomeNew - 900000) * 0.15;
+      basicTaxNew += 300000 * 0.10;
+      basicTaxNew += 300000 * 0.05;
+    } else if (taxableIncomeNew > 600000) {
+      basicTaxNew += (taxableIncomeNew - 600000) * 0.10;
+      basicTaxNew += 300000 * 0.05;
+    } else if (taxableIncomeNew > 300000) {
+      basicTaxNew += (taxableIncomeNew - 300000) * 0.05;
+    }
+  } else {
+    // AY 2025-26 & AY 2026-27 Slabs (Budget 2024+):
+    // 0 to 3,00,000: Nil
+    // 3,00,001 to 7,00,000: 5%
+    // 7,00,001 to 10,00,000: 10%
+    // 10,00,001 to 12,00,000: 15%
+    // 12,00,001 to 15,00,000: 20%
+    // Above 15,00,000: 30%
+    if (taxableIncomeNew > 1500000) {
+      basicTaxNew += (taxableIncomeNew - 1500000) * 0.30;
+      basicTaxNew += 300000 * 0.20; // 12L to 15L
+      basicTaxNew += 200000 * 0.15; // 10L to 12L
+      basicTaxNew += 300000 * 0.10; // 7L to 10L
+      basicTaxNew += 400000 * 0.05; // 3L to 7L
+    } else if (taxableIncomeNew > 1200000) {
+      basicTaxNew += (taxableIncomeNew - 1200000) * 0.20;
+      basicTaxNew += 200000 * 0.15;
+      basicTaxNew += 300000 * 0.10;
+      basicTaxNew += 400000 * 0.05;
+    } else if (taxableIncomeNew > 1000000) {
+      basicTaxNew += (taxableIncomeNew - 1000000) * 0.15;
+      basicTaxNew += 300000 * 0.10;
+      basicTaxNew += 400000 * 0.05;
+    } else if (taxableIncomeNew > 700000) {
+      basicTaxNew += (taxableIncomeNew - 700000) * 0.10;
+      basicTaxNew += 400000 * 0.05;
+    } else if (taxableIncomeNew > 300000) {
+      basicTaxNew += (taxableIncomeNew - 300000) * 0.05;
+    }
   }
 
   // Section 87A Full Rebate in New Regime up to ₹7,00,000 taxable income (max ₹25,000)
-  // Marginal relief applies if taxable income slightly exceeds 7L
   let rebate87ANew = 0;
   if (taxableIncomeNew <= 700000) {
     rebate87ANew = basicTaxNew;
@@ -66,7 +106,7 @@ export function calculateTaxes(
 
   const taxAfterRebateNew = Math.max(0, basicTaxNew - rebate87ANew);
   const cessNew = Math.round(taxAfterRebateNew * 0.04);
-  const totalTaxPayableNew = taxAfterRebateNew + cessNew;
+  let totalTaxPayableNew = taxAfterRebateNew + cessNew;
 
   // ----------------------------------------------------
   // 2. OLD REGIME
@@ -117,7 +157,15 @@ export function calculateTaxes(
 
   const taxAfterRebateOld = Math.max(0, basicTaxOld - rebate87AOld);
   const cessOld = Math.round(taxAfterRebateOld * 0.04);
-  const totalTaxPayableOld = taxAfterRebateOld + cessOld;
+  let totalTaxPayableOld = taxAfterRebateOld + cessOld;
+
+  // ITR-U Additional Tax under Section 140B (25% if filed within 12 months, 50% if filed between 12-24 months)
+  let itrUAdditionalTax = 0;
+  if (filingSection === '139(8A)') {
+    const chosenTax = Math.min(totalTaxPayableNew, totalTaxPayableOld);
+    const rate = assessmentYear === '2024-25' ? 0.50 : 0.25; // 50% for 12-24 months past, 25% for 0-12 months past
+    itrUAdditionalTax = Math.round(chosenTax * rate);
+  }
 
   const savingsAmount = Math.abs(totalTaxPayableOld - totalTaxPayableNew);
   const recommended = totalTaxPayableNew <= totalTaxPayableOld ? 'NEW' : 'OLD';
@@ -145,5 +193,8 @@ export function calculateTaxes(
     },
     recommended,
     savingsAmount,
+    assessmentYear,
+    filingSection,
+    itrUAdditionalTax,
   };
 }

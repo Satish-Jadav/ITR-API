@@ -1,18 +1,21 @@
 'use client';
 
 import React from 'react';
-import { IndianRupee, Briefcase, FileText, CheckCircle2, TrendingUp, AlertCircle, ArrowLeft, ArrowRight, ShieldCheck, Sparkles, Building2 } from 'lucide-react';
-import { IncomeDetails } from '../types';
+import { IndianRupee, Briefcase, FileText, CheckCircle2, TrendingUp, AlertCircle, ArrowLeft, ArrowRight, ShieldCheck, Sparkles, Building2, Calendar } from 'lucide-react';
+import { IncomeDetails, TaxPayerProfile } from '../types';
 
 interface Step2Props {
   income: IncomeDetails;
+  profile: TaxPayerProfile;
   onChange: (updated: Partial<IncomeDetails>) => void;
   onNext: () => void;
   onPrev: () => void;
 }
 
-export default function Step2Income({ income, onChange, onNext, onPrev }: Step2Props) {
-  const netSalaryNew = Math.max(0, income.grossSalary - income.standardDeductionNew);
+export default function Step2Income({ income, profile, onChange, onNext, onPrev }: Step2Props) {
+  const isAY2024 = profile.assessmentYear === '2024-25';
+  const effectiveStdDeductionNew = isAY2024 ? 50000 : 75000;
+  const netSalaryNew = Math.max(0, income.grossSalary - effectiveStdDeductionNew);
   const totalOther = income.savingsInterest + income.fdInterest + income.otherIncome;
   const grossTotalIncome = income.grossSalary + totalOther;
 
@@ -27,14 +30,14 @@ export default function Step2Income({ income, onChange, onNext, onPrev }: Step2P
           <div>
             <div className="flex items-center space-x-2">
               <h3 className="text-sm sm:text-base font-bold text-white">
-                Live AIS &amp; Form 16 Pre-Reconciled
+                Live AIS &amp; Form 16 Pre-Reconciled (AY {profile.assessmentYear})
               </h3>
               <span className="text-[10px] font-mono bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30 font-bold">
                 100% Zero-Variance
               </span>
             </div>
             <p className="text-xs text-emerald-300/90 mt-0.5">
-              CBDT e-Filing database sync complete. 26AS TDS credits match employer quarterly returns.
+              CBDT e-Filing database sync complete for FY {profile.financialYear}. Form 26AS TDS credits match employer quarterly returns.
             </p>
           </div>
         </div>
@@ -52,7 +55,7 @@ export default function Step2Income({ income, onChange, onNext, onPrev }: Step2P
             </div>
             <div>
               <h4 className="text-sm sm:text-base font-bold text-white">Salary Income u/s 17(1)</h4>
-              <p className="text-[11px] text-slate-400">Derived from Form 16 Part B (Item 1 &amp; Item 2)</p>
+              <p className="text-[11px] text-slate-400">Derived from Form 16 Part B for AY {profile.assessmentYear}</p>
             </div>
           </div>
           <span className="text-xs text-slate-400 font-mono bg-slate-800/60 px-2.5 py-1 rounded-lg border border-slate-700">
@@ -92,7 +95,7 @@ export default function Step2Income({ income, onChange, onNext, onPrev }: Step2P
                 Standard Deduction u/s 16(ia)
               </label>
               <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                AY 2026-27 Enhanced
+                AY {profile.assessmentYear} Limit
               </span>
             </div>
             <div className="relative">
@@ -100,14 +103,18 @@ export default function Step2Income({ income, onChange, onNext, onPrev }: Step2P
               <input
                 id="std-deduction-input"
                 type="number"
-                value={income.standardDeductionNew}
+                value={effectiveStdDeductionNew}
                 disabled
                 className="w-full bg-slate-950/50 border border-slate-800 rounded-xl pl-8 pr-3.5 py-2.5 text-sm text-emerald-400 font-mono font-bold cursor-not-allowed"
               />
             </div>
             <p className="text-[11px] text-emerald-400 mt-1.5 flex items-center space-x-1">
               <Sparkles className="w-3 h-3 flex-shrink-0" />
-              <span>Enhanced ₹75,000 for New Regime (₹50,000 for Old Regime)</span>
+              <span>
+                {isAY2024
+                  ? 'AY 2024-25 CBDT limit: ₹50,000 for New Regime'
+                  : 'Enhanced ₹75,000 for New Regime (₹50,000 for Old Regime)'}
+              </span>
             </p>
           </div>
         </div>
@@ -179,7 +186,7 @@ export default function Step2Income({ income, onChange, onNext, onPrev }: Step2P
         </div>
         <div className="text-right">
           <span className="text-[10px] text-emerald-400 font-semibold block uppercase tracking-wider">Statutory Audit</span>
-          <span className="text-xs font-bold text-slate-200">AIS Reconciliation Verified</span>
+          <span className="text-xs font-bold text-slate-200">AY {profile.assessmentYear} Validated</span>
         </div>
       </div>
 

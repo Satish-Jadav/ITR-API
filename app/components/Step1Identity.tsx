@@ -1,8 +1,8 @@
 'use client';
 
 import React from 'react';
-import { User, ShieldCheck, CheckCircle2, Building, CreditCard, Calendar, Hash, ArrowRight, Sparkles, Lock, BadgeCheck } from 'lucide-react';
-import { TaxPayerProfile } from '../types';
+import { User, ShieldCheck, CheckCircle2, Building, CreditCard, Calendar, Hash, ArrowRight, Sparkles, Lock, BadgeCheck, AlertCircle, History } from 'lucide-react';
+import { TaxPayerProfile, AssessmentYear, FilingSection } from '../types';
 
 interface Step1Props {
   profile: TaxPayerProfile;
@@ -11,34 +11,179 @@ interface Step1Props {
 }
 
 export default function Step1Identity({ profile, onChange, onNext }: Step1Props) {
+  const isPreviousYear = profile.assessmentYear !== '2026-27';
+
+  const handleYearChange = (year: AssessmentYear) => {
+    let defaultSection: FilingSection = '139(1)';
+    let finYear = '2025-26';
+
+    if (year === '2025-26') {
+      finYear = '2024-25';
+      defaultSection = '139(4)'; // Belated or 139(8A)
+    } else if (year === '2024-25') {
+      finYear = '2023-24';
+      defaultSection = '139(8A)'; // Updated return
+    }
+
+    onChange({
+      assessmentYear: year,
+      financialYear: finYear,
+      filingSection: defaultSection,
+    });
+  };
+
   return (
     <div className="space-y-4 sm:space-y-5 animate-in fade-in duration-200">
-      {/* Statutory CBDT Verification Banner */}
-      <div className="relative overflow-hidden bg-gradient-to-r from-slate-900 via-slate-850 to-emerald-950/30 border border-slate-700/70 rounded-2xl p-4 sm:p-5 shadow-lg shadow-black/20">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-start space-x-3.5">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 flex-shrink-0 mt-0.5">
-              <ShieldCheck className="w-5 h-5" />
+      
+      {/* Assessment Year & Statutory Provision Selection Card */}
+      <div className={`rounded-2xl p-4 sm:p-5 border transition-all shadow-lg ${
+        isPreviousYear
+          ? 'bg-gradient-to-r from-slate-900 via-amber-950/30 to-slate-900 border-amber-500/40 shadow-amber-950/20'
+          : 'bg-gradient-to-r from-slate-900 via-slate-850 to-emerald-950/30 border-slate-700/70 shadow-black/20'
+      }`}>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+          <div className="flex items-center space-x-3">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+              isPreviousYear
+                ? 'bg-amber-500/10 border border-amber-500/30 text-amber-400'
+                : 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
+            }`}>
+              {isPreviousYear ? <History className="w-5 h-5" /> : <Calendar className="w-5 h-5" />}
             </div>
             <div>
-              <div className="flex items-center space-x-2 flex-wrap">
-                <h2 className="text-base sm:text-lg font-bold text-white tracking-tight">
-                  Taxpayer Identity &amp; Portal Authentication
-                </h2>
-                <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  <BadgeCheck className="w-3 h-3" />
-                  <span>CBDT E-Filing Authenticated</span>
-                </span>
+              <div className="flex items-center space-x-2">
+                <h3 className="text-base font-bold text-white">
+                  Filing Assessment Year &amp; Statutory Section
+                </h3>
+                {isPreviousYear && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                    Previous Year Mode
+                  </span>
+                )}
               </div>
-              <p className="text-xs text-slate-400 mt-1">
-                Profile authenticated via Income Tax Department (ITD) e-Filing 2.0 with Aadhaar-PAN statutory linkage.
+              <p className="text-xs text-slate-400 mt-0.5">
+                Need to file for a past year? Select the relevant Assessment Year and CBDT statutory section below.
               </p>
             </div>
           </div>
-          <div className="flex items-center space-x-2 text-[11px] text-emerald-400 font-mono bg-slate-900/90 px-3 py-1.5 rounded-lg border border-slate-700/60 self-start sm:self-auto">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>AY 2026-27 Active</span>
+          <div className="text-xs font-mono text-slate-300 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800 self-start sm:self-auto">
+            FY: <strong className="text-emerald-400">{profile.financialYear}</strong>
           </div>
+        </div>
+
+        {/* Year Selector Pills */}
+        <div className="pt-3.5 space-y-3">
+          <div>
+            <label className="text-xs font-semibold text-slate-300 block mb-2">
+              Select Assessment Year (AY):
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              
+              {/* AY 2026-27 */}
+              <button
+                type="button"
+                onClick={() => handleYearChange('2026-27')}
+                className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between ${
+                  profile.assessmentYear === '2026-27'
+                    ? 'bg-emerald-950/40 border-emerald-500 ring-1 ring-emerald-500/40'
+                    : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-bold text-white">AY 2026-27</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-bold">
+                    Current Year
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">FY 2025-26 • Std Ded ₹75,000</p>
+              </button>
+
+              {/* AY 2025-26 (Previous Year) */}
+              <button
+                type="button"
+                onClick={() => handleYearChange('2025-26')}
+                className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between ${
+                  profile.assessmentYear === '2025-26'
+                    ? 'bg-amber-950/40 border-amber-500 ring-1 ring-amber-500/40'
+                    : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-bold text-white">AY 2025-26</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold">
+                    Previous Year
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">FY 2024-25 • Belated / ITR-U</p>
+              </button>
+
+              {/* AY 2024-25 (Past Year ITR-U) */}
+              <button
+                type="button"
+                onClick={() => handleYearChange('2024-25')}
+                className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between ${
+                  profile.assessmentYear === '2024-25'
+                    ? 'bg-amber-950/40 border-amber-500 ring-1 ring-amber-500/40'
+                    : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-bold text-white">AY 2024-25</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 font-bold">
+                    ITR-U Available
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">FY 2023-24 • Sec 139(8A) Updated</p>
+              </button>
+
+            </div>
+          </div>
+
+          {/* Statutory Filing Section Dropdown */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            <div>
+              <label htmlFor="filing-section" className="text-xs font-semibold text-slate-300 block mb-1.5">
+                Filing Section &amp; Provision
+              </label>
+              <select
+                id="filing-section"
+                value={profile.filingSection}
+                onChange={(e) => onChange({ filingSection: e.target.value as FilingSection })}
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs sm:text-sm text-white focus:border-emerald-500 focus:outline-none"
+              >
+                <option value="139(1)">Section 139(1) — Original Return (On or before Due Date)</option>
+                <option value="139(4)">Section 139(4) — Belated Return (After Due Date)</option>
+                <option value="139(5)">Section 139(5) — Revised Return (Correcting previous return)</option>
+                <option value="139(8A)">Section 139(8A) — Updated Return (ITR-U for missed/under-reported income)</option>
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="filing-tier" className="text-xs font-semibold text-slate-300 block mb-1.5">
+                ITR Form Tier
+              </label>
+              <select
+                id="filing-tier"
+                value={profile.filingType}
+                onChange={(e) => onChange({ filingType: e.target.value as any })}
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs sm:text-sm text-white focus:border-emerald-500 focus:outline-none"
+              >
+                <option value="ITR-1">ITR-1 Sahaj (Salaried, 1 House Property, &lt;₹50L)</option>
+                <option value="ITR-2">ITR-2 (Capital Gains, Multiple Properties, Crypto)</option>
+                <option value="ITR-4">ITR-4 Sugam (Presumptive Business / Profession)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Previous Year Alert Tip */}
+          {isPreviousYear && (
+            <div className="bg-amber-950/20 border border-amber-800/40 rounded-xl p-3 flex items-start space-x-2.5 text-xs text-amber-200">
+              <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+              <p className="leading-relaxed">
+                <strong>Statutory Notice Protection:</strong> Under <strong>Section 139(8A)</strong>, you can file an Updated Return (ITR-U) up to 24–48 months from the end of the relevant assessment year to clear past unfiled years or report additional income with statutory immunity.
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -135,57 +280,25 @@ export default function Step1Identity({ profile, onChange, onNext }: Step1Props)
           <p className="text-[11px] text-slate-400 mt-2 px-0.5">Standard slab criteria applied automatically</p>
         </div>
 
-        {/* Filing Form Tier */}
-        <div className="bg-slate-900/70 border border-slate-700/60 hover:border-slate-600/80 rounded-2xl p-4 transition-all duration-200 shadow-sm">
+        {/* Bank Account Masked Card */}
+        <div className="bg-slate-900/70 border border-slate-700/60 hover:border-slate-600/80 rounded-2xl p-4 transition-all duration-200 shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between mb-2">
-            <label htmlFor="filing-type-select" className="text-xs font-semibold text-slate-300 flex items-center space-x-1.5">
-              <Building className="w-3.5 h-3.5 text-indigo-400" />
-              <span>ITR Return Form Tier</span>
-              <span className="text-emerald-400 font-bold">*</span>
+            <label className="text-xs font-semibold text-slate-300 flex items-center space-x-1.5">
+              <CreditCard className="w-3.5 h-3.5 text-teal-400" />
+              <span>Validated Refund Account</span>
             </label>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
-              CBDT FY 2025-26
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+              Pre-Validated
             </span>
           </div>
-          <select
-            id="filing-type-select"
-            value={profile.filingType}
-            onChange={(e) => onChange({ filingType: e.target.value as any })}
-            className="w-full bg-slate-950/80 border border-slate-700/80 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 rounded-xl px-3 py-2.5 text-xs sm:text-sm text-white transition-all outline-none"
-          >
-            <option value="ITR-1">ITR-1 Sahaj (Salaried, 1 House Property, &lt;₹50L)</option>
-            <option value="ITR-2">ITR-2 (Capital Gains, Multiple Properties, Crypto)</option>
-            <option value="ITR-4">ITR-4 Sugam (Presumptive Business u/s 44AD / Profession)</option>
-          </select>
-          <p className="text-[11px] text-emerald-400 mt-2 px-0.5">Recommended automatically based on your Form 16 stream</p>
-        </div>
-      </div>
-
-      {/* Validated Refund Bank Account Card */}
-      <div className="bg-gradient-to-r from-slate-900/90 to-slate-900/60 border border-slate-700/70 hover:border-slate-600 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-md">
-        <div className="flex items-center space-x-3.5">
-          <div className="w-10 h-10 rounded-xl bg-teal-500/10 border border-teal-500/30 flex items-center justify-center text-teal-400 flex-shrink-0">
-            <CreditCard className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center space-x-2 flex-wrap">
-              <span className="text-sm font-bold text-white">{profile.bankName}</span>
-              <span className="text-xs font-mono text-slate-300 bg-slate-950/80 px-2 py-0.5 rounded border border-slate-800">
-                {profile.bankAccountMasked}
-              </span>
-              <span className="inline-flex items-center space-x-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-semibold">
-                <CheckCircle2 className="w-3 h-3" />
-                <span>Pre-Validated for Direct Refund</span>
-              </span>
+          <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5 flex items-center justify-between">
+            <div>
+              <span className="text-xs font-bold text-white block">{profile.bankName}</span>
+              <span className="text-[11px] font-mono text-slate-400">{profile.bankAccountMasked} • IFSC: {profile.bankIfsc}</span>
             </div>
-            <p className="text-xs text-slate-400 mt-1">
-              IFSC: <span className="font-mono text-slate-300">{profile.bankIfsc}</span> • EVC &amp; Direct ECS Mandate Active • 100% Tax Notice Protection
-            </p>
+            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
           </div>
-        </div>
-        <div className="flex items-center space-x-1.5 text-xs text-emerald-400 font-semibold self-end sm:self-auto bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/20">
-          <Lock className="w-3.5 h-3.5" />
-          <span>Direct Credit Enabled</span>
+          <p className="text-[11px] text-emerald-400 mt-2 px-0.5">Direct CBDT ECS refund credit enabled</p>
         </div>
       </div>
 
@@ -195,7 +308,7 @@ export default function Step1Identity({ profile, onChange, onNext }: Step1Props)
           onClick={onNext}
           className="w-full sm:w-auto px-7 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-sm font-bold rounded-xl shadow-xl shadow-emerald-600/25 hover:shadow-emerald-500/35 active:scale-[0.99] transition-all flex items-center justify-center space-x-2"
         >
-          <span>Confirm &amp; Proceed to Income</span>
+          <span>Confirm &amp; Proceed to Income (AY {profile.assessmentYear})</span>
           <ArrowRight className="w-4 h-4" />
         </button>
       </div>

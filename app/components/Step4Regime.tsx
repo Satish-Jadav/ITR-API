@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Award, CheckCircle2, ShieldCheck, Zap, ArrowLeft, ArrowRight, AlertTriangle, FileCheck2, Sparkles, Building, Landmark } from 'lucide-react';
+import { Award, CheckCircle2, ShieldCheck, Zap, ArrowLeft, ArrowRight, AlertTriangle, FileCheck2, Sparkles, Building, Landmark, History } from 'lucide-react';
 import { RegimeComparison, TaxPayerProfile, IncomeDetails, DeductionsDetails } from '../types';
 
 interface Step4Props {
@@ -22,14 +22,25 @@ export default function Step4Regime({
   onOpenApproval,
 }: Step4Props) {
   const isNewOptimal = regime.recommended === 'NEW';
+  const isPreviousYear = profile.assessmentYear !== '2026-27';
+  const isITRU = profile.filingSection === '139(8A)';
+  const effectiveStdDeductionNew = profile.assessmentYear === '2024-25' ? 50000 : 75000;
 
   return (
     <div className="space-y-4 sm:space-y-5 animate-in fade-in duration-200">
       {/* High-Impact Recommendation Hero Banner */}
-      <div className="bg-gradient-to-r from-emerald-950/90 via-slate-900 to-teal-950/90 border-2 border-emerald-500/50 rounded-2xl p-4 sm:p-6 relative overflow-hidden shadow-2xl shadow-emerald-950/40">
+      <div className={`border-2 rounded-2xl p-4 sm:p-6 relative overflow-hidden shadow-2xl ${
+        isPreviousYear
+          ? 'bg-gradient-to-r from-amber-950/80 via-slate-900 to-emerald-950/80 border-amber-500/50 shadow-amber-950/30'
+          : 'bg-gradient-to-r from-emerald-950/90 via-slate-900 to-teal-950/90 border-emerald-500/50 shadow-emerald-950/40'
+      }`}>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-start sm:items-center space-x-4">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 flex-shrink-0 shadow-lg shadow-emerald-500/20">
+            <div className={`w-12 h-12 rounded-2xl border flex items-center justify-center flex-shrink-0 shadow-lg ${
+              isPreviousYear
+                ? 'bg-amber-500/20 border-amber-500/40 text-amber-400 shadow-amber-500/20'
+                : 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400 shadow-emerald-500/20'
+            }`}>
               <Award className="w-7 h-7" />
             </div>
             <div>
@@ -38,11 +49,16 @@ export default function Step4Regime({
                   Optimal Choice: {regime.recommended} Tax Regime
                 </span>
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-400 text-slate-950 uppercase tracking-wider">
-                  Maximum Savings
+                  AY {profile.assessmentYear} Winner
                 </span>
+                {isITRU && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/30 text-indigo-200 border border-indigo-500/40">
+                    Sec 139(8A) ITR-U
+                  </span>
+                )}
               </div>
               <p className="text-xs sm:text-sm text-emerald-300 mt-1">
-                You save <strong className="text-white font-mono text-sm sm:text-base font-black">₹{regime.savingsAmount.toLocaleString('en-IN')}</strong> in taxes by choosing this regime for AY 2026-27!
+                You save <strong className="text-white font-mono text-sm sm:text-base font-black">₹{regime.savingsAmount.toLocaleString('en-IN')}</strong> in taxes for AY {profile.assessmentYear}!
               </p>
             </div>
           </div>
@@ -54,6 +70,11 @@ export default function Step4Regime({
             <span className="text-2xl sm:text-3xl font-black text-white font-mono tracking-tight text-emerald-400">
               ₹{(isNewOptimal ? regime.newRegime.totalTaxPayable : regime.oldRegime.totalTaxPayable).toLocaleString('en-IN')}
             </span>
+            {isITRU && regime.itrUAdditionalTax && regime.itrUAdditionalTax > 0 ? (
+              <span className="text-[11px] text-amber-300 block mt-0.5 font-mono">
+                + ₹{regime.itrUAdditionalTax.toLocaleString('en-IN')} Sec 140B Addl. Tax
+              </span>
+            ) : null}
           </div>
         </div>
       </div>
@@ -75,7 +96,7 @@ export default function Step4Regime({
                   Sec 115BAC
                 </span>
               </div>
-              <p className="text-xs text-slate-400 mt-0.5">Default Regime with ₹75,000 Standard Deduction</p>
+              <p className="text-xs text-slate-400 mt-0.5">AY {profile.assessmentYear} Provisions (Std Ded ₹{effectiveStdDeductionNew.toLocaleString('en-IN')})</p>
             </div>
             {isNewOptimal && (
               <span className="text-xs font-bold text-emerald-400 flex items-center space-x-1.5 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/30">
@@ -92,7 +113,7 @@ export default function Step4Regime({
             </div>
             <div className="flex justify-between text-slate-300">
               <span>Standard Deduction</span>
-              <span className="font-mono text-emerald-400 font-semibold">-₹75,000</span>
+              <span className="font-mono text-emerald-400 font-semibold">-₹{effectiveStdDeductionNew.toLocaleString('en-IN')}</span>
             </div>
             <div className="flex justify-between text-slate-300">
               <span>Net Taxable Income</span>
@@ -191,16 +212,16 @@ export default function Step4Regime({
 
       </div>
 
-      {/* 5-Point Statutory Pre-Filing Audit Checklist */}
+      {/* Statutory Pre-Filing Audit Checklist */}
       <div className="bg-slate-900/80 border border-slate-700/70 rounded-2xl p-4 sm:p-5 space-y-3 shadow-md">
         <h4 className="text-xs sm:text-sm font-bold text-white flex items-center space-x-2">
           <ShieldCheck className="w-4 h-4 text-emerald-400" />
-          <span>CBDT Statutory Pre-Filing Audit Checks (AY 2026-27)</span>
+          <span>CBDT Statutory Pre-Filing Audit Checks (AY {profile.assessmentYear})</span>
         </h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
           <div className="flex items-center space-x-2.5 bg-slate-950/70 p-2.5 rounded-xl border border-slate-800">
             <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-            <span className="text-slate-300">Aadhaar-PAN Linkage Status: <strong className="text-emerald-400">LINKED</strong></span>
+            <span className="text-slate-300">Filing Section Provision: <strong className="text-emerald-400">u/s {profile.filingSection}</strong></span>
           </div>
           <div className="flex items-center space-x-2.5 bg-slate-950/70 p-2.5 rounded-xl border border-slate-800">
             <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
@@ -212,7 +233,7 @@ export default function Step4Regime({
           </div>
           <div className="flex items-center space-x-2.5 bg-slate-950/70 p-2.5 rounded-xl border border-slate-800">
             <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-            <span className="text-slate-300">JSON Schema 2026 Integrity: <strong className="text-emerald-400">VALIDATED</strong></span>
+            <span className="text-slate-300">JSON Schema {profile.assessmentYear} Integrity: <strong className="text-emerald-400">VALIDATED</strong></span>
           </div>
         </div>
       </div>
@@ -231,7 +252,7 @@ export default function Step4Regime({
           className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white text-sm font-black rounded-xl shadow-xl shadow-emerald-500/25 hover:shadow-emerald-500/35 active:scale-[0.99] transition-all flex items-center justify-center space-x-2.5"
         >
           <FileCheck2 className="w-5 h-5" />
-          <span>Proceed to Final Approval &amp; Filing</span>
+          <span>Proceed to Final Approval &amp; Filing (AY {profile.assessmentYear})</span>
           <ArrowRight className="w-4 h-4" />
         </button>
       </div>

@@ -8,9 +8,9 @@ import Step3Deductions from './components/Step3Deductions';
 import Step4Regime from './components/Step4Regime';
 import AiCopilot from './components/AiCopilot';
 import FinalApprovalModal from './components/FinalApprovalModal';
-import { TaxPayerProfile, IncomeDetails, DeductionsDetails } from './types';
+import { TaxPayerProfile, IncomeDetails, DeductionsDetails, AssessmentYear, FilingSection } from './types';
 import { calculateTaxes } from './utils/taxCalculator';
-import { User, FileText, PiggyBank, Scale, Sparkles, Shield, ChevronRight } from 'lucide-react';
+import { User, FileText, PiggyBank, Scale, Sparkles, Shield, ChevronRight, History, Calendar } from 'lucide-react';
 
 export default function FilingWizardPage() {
   // 1. Initial State hydrated with live profile & Form 16 records
@@ -22,6 +22,7 @@ export default function FilingWizardPage() {
     mobile: '+91 98765 43210',
     assessmentYear: '2026-27',
     financialYear: '2025-26',
+    filingSection: '139(1)',
     filingType: 'ITR-1',
     residentStatus: 'Resident',
     ageCategory: '<60',
@@ -57,23 +58,52 @@ export default function FilingWizardPage() {
   const [isAiOpen, setIsAiOpen] = useState<boolean>(false);
   const [isApprovalOpen, setIsApprovalOpen] = useState<boolean>(false);
 
+  const handleYearChange = (year: AssessmentYear) => {
+    let defaultSection: FilingSection = '139(1)';
+    let finYear = '2025-26';
+    let stdDedNew = 75000;
+
+    if (year === '2025-26') {
+      finYear = '2024-25';
+      defaultSection = '139(4)';
+      stdDedNew = 75000;
+    } else if (year === '2024-25') {
+      finYear = '2023-24';
+      defaultSection = '139(8A)';
+      stdDedNew = 50000;
+    }
+
+    setProfile((prev) => ({
+      ...prev,
+      assessmentYear: year,
+      financialYear: finYear,
+      filingSection: defaultSection,
+    }));
+
+    setIncome((prev) => ({
+      ...prev,
+      standardDeductionNew: stdDedNew,
+    }));
+  };
+
   // Live Statutory Tax Calculation Engine
   const regimeComparison = useMemo(() => {
-    return calculateTaxes(income, deductions);
-  }, [income, deductions]);
+    return calculateTaxes(income, deductions, profile.assessmentYear, profile.filingSection);
+  }, [income, deductions, profile.assessmentYear, profile.filingSection]);
 
   const steps = [
-    { id: 1, label: 'Identity', icon: User, desc: 'PAN & Bank' },
+    { id: 1, label: 'Identity', icon: User, desc: `AY ${profile.assessmentYear} & PAN` },
     { id: 2, label: 'Income', icon: FileText, desc: 'Form 16 / AIS' },
     { id: 3, label: 'Deductions', icon: PiggyBank, desc: '80C & 80D' },
     { id: 4, label: 'Regime', icon: Scale, desc: 'Showdown & File' },
   ];
 
   const handleResetData = () => {
+    const stdDed = profile.assessmentYear === '2024-25' ? 50000 : 75000;
     setIncome({
       grossSalary: 892173,
       allowancesExempt: 0,
-      standardDeductionNew: 75000,
+      standardDeductionNew: stdDed,
       standardDeductionOld: 50000,
       professionalTax: 2400,
       homeLoanInterestSelfOccupied: 0,
@@ -92,6 +122,8 @@ export default function FilingWizardPage() {
     });
   };
 
+  const isPreviousYear = profile.assessmentYear !== '2026-27';
+
   return (
     <div className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-white">
       {/* 1. Header Navigation */}
@@ -100,41 +132,73 @@ export default function FilingWizardPage() {
         activeStep={activeStep}
         onOpenAi={() => setIsAiOpen(true)}
         onResetData={handleResetData}
+        onYearChange={handleYearChange}
       />
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-2.5 sm:p-6 lg:p-8 pb-24 sm:pb-8 flex flex-col">
         
         {/* Value Proposition Hero Banner (Client Attraction & Trust Reassurance) */}
-        <div className="mb-4 sm:mb-6 rounded-2xl bg-gradient-to-r from-emerald-950/60 via-slate-900/90 to-teal-950/50 border border-emerald-500/30 p-3.5 sm:p-5 shadow-lg relative overflow-hidden">
+        <div className={`mb-4 sm:mb-6 rounded-2xl border p-3.5 sm:p-5 shadow-lg relative overflow-hidden transition-all ${
+          isPreviousYear
+            ? 'bg-gradient-to-r from-amber-950/50 via-slate-900/90 to-slate-900/90 border-amber-500/40 shadow-amber-950/20'
+            : 'bg-gradient-to-r from-emerald-950/60 via-slate-900/90 to-teal-950/50 border-emerald-500/30'
+        }`}>
           <div className="absolute top-0 right-0 w-72 h-72 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 relative z-10">
             <div>
-              <div className="flex items-center space-x-2 mb-1">
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500 text-slate-950 tracking-wide uppercase">
-                  AY 2026-27 Active
+              <div className="flex items-center space-x-2 mb-1 flex-wrap gap-y-1">
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase ${
+                  isPreviousYear
+                    ? 'bg-amber-400 text-slate-950 font-black'
+                    : 'bg-emerald-500 text-slate-950'
+                }`}>
+                  AY {profile.assessmentYear} Active ({isPreviousYear ? 'Previous Year' : 'Current'})
                 </span>
                 <span className="text-xs text-emerald-400 font-semibold flex items-center space-x-1">
                   <Shield className="w-3.5 h-3.5" />
                   <span>100% Tax Notice Protection</span>
+                </span>
+                <span className="text-xs text-slate-400 font-mono">
+                  Section {profile.filingSection}
                 </span>
               </div>
               <h1 className="text-base sm:text-xl font-extrabold text-white tracking-tight">
                 Direct-to-CBDT Tax Optimizer &amp; Instant e-Filing
               </h1>
               <p className="text-xs text-slate-300 mt-0.5 max-w-2xl">
-                Pre-filled from Form 16, AIS &amp; Form 26AS. Real-time Section 115BAC New vs. Old Regime showdown with instant bank refund credit.
+                Pre-filled from Form 16, AIS &amp; Form 26AS for FY {profile.financialYear}. Real-time Section 115BAC New vs. Old Regime showdown with instant bank refund credit.
               </p>
             </div>
 
-            <div className="flex items-center space-x-2 self-start md:self-auto">
+            {/* Assessment Year Quick-Switcher in Banner */}
+            <div className="flex items-center space-x-2 self-start md:self-auto flex-wrap gap-y-1.5">
+              <div className="bg-slate-900/90 border border-slate-700/80 rounded-xl p-1.5 flex items-center space-x-1 shadow-sm">
+                <span className="text-[10px] text-slate-400 px-1 font-semibold flex items-center space-x-1">
+                  <History className="w-3 h-3 text-amber-400" />
+                  <span>AY:</span>
+                </span>
+                {(['2026-27', '2025-26', '2024-25'] as AssessmentYear[]).map((y) => (
+                  <button
+                    key={y}
+                    type="button"
+                    onClick={() => handleYearChange(y)}
+                    className={`px-2 py-1 rounded-lg text-xs font-bold transition-all ${
+                      profile.assessmentYear === y
+                        ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                    }`}
+                  >
+                    {y}
+                  </button>
+                ))}
+              </div>
+
               <div className="bg-slate-900/90 border border-slate-700/80 rounded-xl px-3 py-2 text-center shadow-sm">
                 <span className="text-[10px] text-slate-400 block font-medium">Standard Deduction</span>
-                <span className="text-xs sm:text-sm font-bold text-emerald-400 font-mono">₹75,000 Auto-Applied</span>
-              </div>
-              <div className="bg-slate-900/90 border border-slate-700/80 rounded-xl px-3 py-2 text-center shadow-sm">
-                <span className="text-[10px] text-slate-400 block font-medium">Expected Refund</span>
-                <span className="text-xs sm:text-sm font-bold text-white font-mono">3–7 Working Days</span>
+                <span className="text-xs sm:text-sm font-bold text-emerald-400 font-mono">
+                  ₹{income.standardDeductionNew.toLocaleString('en-IN')}
+                </span>
               </div>
             </div>
           </div>
@@ -197,6 +261,7 @@ export default function FilingWizardPage() {
             {activeStep === 2 && (
               <Step2Income
                 income={income}
+                profile={profile}
                 onChange={(up) => setIncome((i) => ({ ...i, ...up }))}
                 onNext={() => setActiveStep(3)}
                 onPrev={() => setActiveStep(1)}
@@ -240,7 +305,10 @@ export default function FilingWizardPage() {
 
               {/* Net Savings Callout */}
               <div className="mt-3 bg-gradient-to-br from-emerald-950/80 to-slate-900 border border-emerald-500/40 rounded-xl p-3.5 shadow-sm">
-                <span className="text-[11px] text-emerald-300 font-semibold block">Maximum Tax Savings</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-emerald-300 font-semibold block">Maximum Tax Savings</span>
+                  <span className="text-[10px] font-mono text-slate-400">AY {profile.assessmentYear}</span>
+                </div>
                 <div className="flex items-baseline justify-between mt-0.5">
                   <span className="text-2xl font-black text-white font-mono">
                     ₹{regimeComparison.savingsAmount.toLocaleString('en-IN')}
@@ -297,6 +365,13 @@ export default function FilingWizardPage() {
                     ₹{regimeComparison.oldRegime.totalTaxPayable.toLocaleString('en-IN')}
                   </span>
                 </div>
+
+                {regimeComparison.itrUAdditionalTax && regimeComparison.itrUAdditionalTax > 0 ? (
+                  <div className="flex justify-between text-amber-300 font-semibold pt-1 border-t border-slate-800/60">
+                    <span>Sec 140B ITR-U Addl. Tax</span>
+                    <span className="font-mono">+₹{regimeComparison.itrUAdditionalTax.toLocaleString('en-IN')}</span>
+                  </div>
+                ) : null}
               </div>
 
               {/* Direct e-Filing CTA Button from Summary Terminal */}
@@ -310,7 +385,7 @@ export default function FilingWizardPage() {
                 }}
                 className="w-full mt-2 py-2.5 bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-bold text-xs rounded-xl flex items-center justify-center space-x-1.5 shadow-md shadow-emerald-500/20 active:scale-95 transition-all"
               >
-                <span>{activeStep < 4 ? 'Review & Compare Regimes' : 'e-Verify & Transmit Return'}</span>
+                <span>{activeStep < 4 ? 'Review & Compare Regimes' : `e-Verify & Transmit (AY ${profile.assessmentYear})`}</span>
                 <ChevronRight className="w-4 h-4" />
               </button>
 
@@ -333,7 +408,7 @@ export default function FilingWizardPage() {
       <div className="fixed bottom-0 left-0 right-0 z-30 sm:hidden bg-slate-900/95 backdrop-blur-xl border-t border-slate-800/90 px-3.5 py-2.5 flex items-center justify-between shadow-2xl">
         <div className="flex flex-col">
           <div className="flex items-center space-x-1.5">
-            <span className="text-[10px] uppercase font-bold text-slate-400">Tax Payable:</span>
+            <span className="text-[10px] uppercase font-bold text-slate-400">AY {profile.assessmentYear}:</span>
             <span className="font-mono text-sm font-bold text-white">
               ₹{regimeComparison.newRegime.totalTaxPayable.toLocaleString('en-IN')}
             </span>
