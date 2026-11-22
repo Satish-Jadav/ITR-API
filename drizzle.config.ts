@@ -46,5 +46,5 @@ export default defineConfig({
   schemaFilter: ['public'],
   verbose: true,
   strict: false,
-  dbCredentials: getCredentials(),
+  dbCredentials: getCredentials() as any,
 });
