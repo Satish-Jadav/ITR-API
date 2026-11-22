@@ -11,7 +11,7 @@
     "dev": "next dev",
     "dev:api": "node init && tsx watch src/devServer.ts",
     "build": "next build",
-    "vercel-build": "node scripts/db-push.js 2>/dev/null || true; next build",
+    "vercel-build": "next build",
     "start": "next start",
     "lint": "tsc --noEmit",
     "generate-keys": "node scripts/generate-keys.js",

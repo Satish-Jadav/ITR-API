@@ -3,6 +3,7 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   compress: true,
+  serverExternalPackages: ['pg', 'pino', 'pino-pretty'],
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production' ? { exclude: ['error', 'warn'] } : false,
   },
@@ -27,20 +28,16 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
   async rewrites() {
-    return {
-      beforeFiles: [
-        {
-          source: '/:path*',
-          has: [
-            {
-              type: 'host',
-              value: 'api(?<subdomain>.*)',
-            },
-          ],
-          destination: '/api/:path*',
-        },
-      ],
-    };
+    return [
+      {
+        source: '/v1/:path*',
+        destination: '/api/v1/:path*',
+      },
+      {
+        source: '/health',
+        destination: '/api/health',
+      },
+    ];
   },
 };
 
