@@ -1,0 +1,38 @@
+name: ZeroTax Web UI & API CI
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build Next.js 15 Web Application & Mount API
+        run: npm run build
+
+      - name: Verify Web Production Bundle
+        run: |
+          if [ ! -d ".next" ]; then
+            echo "::error::Next.js .next build directory not found!"
+            exit 1
+          fi
+          echo "Next.js Web UI & Hono API successfully built and verified."
