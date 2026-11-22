@@ -1,0 +1,10 @@
+.git
+.github
+*.md
+scripts
+drizzle
+supabase
+tsconfig.tsbuildinfo
+generate-keys.bat
+.tmp
+.env*.local
