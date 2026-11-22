@@ -1,4 +1,4 @@
-process.env.NODE_ENV = 'test';
+(process.env as any).NODE_ENV = 'test';
 import { app } from '../src/app.js';
 import { scrubVerhoeffAndPan } from '../src/security/verhoeffScrubber.js';
 

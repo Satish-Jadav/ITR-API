@@ -96,7 +96,7 @@ export async function edgeVaptFirewall(c: Context, next: Next) {
     c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-ZeroTax-Request-Id, X-ZeroTax-Timestamp');
     c.header('Access-Control-Allow-Credentials', 'true');
     if (req.method === 'OPTIONS') {
-      return c.text('', 204);
+      return c.body(null, 204);
     }
   } else if (!isHealth && !isCron && !isAaWebhook && (origin || req.header('sec-fetch-site'))) {
     const isAllowedCaOrigin = isCaShare && (origin === 'https://app.zerotax.in' || isLocalOrigin);
