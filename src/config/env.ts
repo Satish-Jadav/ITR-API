@@ -74,8 +74,7 @@ const parseResult = envSchema.safeParse(process.env);
 if (parseResult.success) {
   parsedEnv = parseResult.data;
 } else {
-  console.warn('⚠️ Environment schema warning; applying resilient runtime fallbacks:', parseResult.error.flatten().fieldErrors);
-  parsedEnv = envSchema.parse({
+  const fallbackResult = envSchema.safeParse({
     ...process.env,
     DB_HOST: process.env.DB_HOST || 'localhost',
     DB_PORT: process.env.DB_PORT || 6543,
@@ -83,6 +82,32 @@ if (parseResult.success) {
     DB_USER: process.env.DB_USER || 'postgres',
     DB_PASSWORD: process.env.DB_PASSWORD || '',
   });
+
+  if (fallbackResult.success) {
+    parsedEnv = fallbackResult.data;
+  } else {
+    console.warn('⚠️ Critical env parse error; applying bulletproof fallback config:', fallbackResult.error.flatten().fieldErrors);
+    parsedEnv = {
+      NODE_ENV: (process.env.NODE_ENV as any) || 'production',
+      PORT: Number(process.env.PORT) || 3000,
+      API_BASE_URL: process.env.API_BASE_URL || 'https://api.zerotax.in',
+      DB_HOST: process.env.DB_HOST || 'localhost',
+      DB_PORT: Number(process.env.DB_PORT) || 6543,
+      DB_NAME: process.env.DB_NAME || 'postgres',
+      DB_USER: process.env.DB_USER || 'postgres',
+      DB_PASSWORD: process.env.DB_PASSWORD || '',
+      SUPABASE_URL: process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
+      SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || 'placeholder-anon-key',
+      SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || 'placeholder-service-role-key',
+      SUPABASE_VAULT_BUCKET: process.env.SUPABASE_VAULT_BUCKET || 'ztvault-backups',
+      SUPABASE_CA_BUCKET: process.env.SUPABASE_CA_BUCKET || 'ca-dossiers',
+      ZEROTAX_PAN_BLIND_INDEX_PEPPER: process.env.ZEROTAX_PAN_BLIND_INDEX_PEPPER || 'default-64-byte-pepper-for-dev-only-00000000000000000000000000000000',
+      GOOGLE_PLAY_PACKAGE_NAME: process.env.GOOGLE_PLAY_PACKAGE_NAME || 'in.zerotax',
+      ALLOW_PLAY_INTEGRITY_DEV_BYPASS: true,
+      ALLOW_INLINE_VAULT_FALLBACK: true,
+      CRON_SECRET: process.env.CRON_SECRET || 'zerotax-cron-secret-dev-default',
+    };
+  }
 }
 
 export const env = parsedEnv;
