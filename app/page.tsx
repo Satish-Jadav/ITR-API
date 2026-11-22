@@ -105,9 +105,44 @@ export default function FilingWizardPage() {
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-2.5 sm:p-6 lg:p-8 pb-24 sm:pb-8 flex flex-col">
         
+        {/* Value Proposition Hero Banner (Client Attraction & Trust Reassurance) */}
+        <div className="mb-4 sm:mb-6 rounded-2xl bg-gradient-to-r from-emerald-950/60 via-slate-900/90 to-teal-950/50 border border-emerald-500/30 p-3.5 sm:p-5 shadow-lg relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-72 h-72 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 relative z-10">
+            <div>
+              <div className="flex items-center space-x-2 mb-1">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500 text-slate-950 tracking-wide uppercase">
+                  AY 2026-27 Active
+                </span>
+                <span className="text-xs text-emerald-400 font-semibold flex items-center space-x-1">
+                  <Shield className="w-3.5 h-3.5" />
+                  <span>100% Tax Notice Protection</span>
+                </span>
+              </div>
+              <h1 className="text-base sm:text-xl font-extrabold text-white tracking-tight">
+                Direct-to-CBDT Tax Optimizer &amp; Instant e-Filing
+              </h1>
+              <p className="text-xs text-slate-300 mt-0.5 max-w-2xl">
+                Pre-filled from Form 16, AIS &amp; Form 26AS. Real-time Section 115BAC New vs. Old Regime showdown with instant bank refund credit.
+              </p>
+            </div>
+
+            <div className="flex items-center space-x-2 self-start md:self-auto">
+              <div className="bg-slate-900/90 border border-slate-700/80 rounded-xl px-3 py-2 text-center shadow-sm">
+                <span className="text-[10px] text-slate-400 block font-medium">Standard Deduction</span>
+                <span className="text-xs sm:text-sm font-bold text-emerald-400 font-mono">₹75,000 Auto-Applied</span>
+              </div>
+              <div className="bg-slate-900/90 border border-slate-700/80 rounded-xl px-3 py-2 text-center shadow-sm">
+                <span className="text-[10px] text-slate-400 block font-medium">Expected Refund</span>
+                <span className="text-xs sm:text-sm font-bold text-white font-mono">3–7 Working Days</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Step Progress Bar (Responsive 360px S23 to 4K) */}
-        <div className="mb-4 sm:mb-6 bg-slate-900/80 border border-slate-800/80 rounded-xl p-2 sm:p-3">
-          <div className="grid grid-cols-4 gap-1 sm:gap-2">
+        <div className="mb-4 sm:mb-6 bg-slate-900/90 border border-slate-800 rounded-2xl p-2 sm:p-3 shadow-md">
+          <div className="grid grid-cols-4 gap-1.5 sm:gap-2.5">
             {steps.map((s) => {
               const Icon = s.icon;
               const isActive = activeStep === s.id;
@@ -116,28 +151,30 @@ export default function FilingWizardPage() {
                 <button
                   key={s.id}
                   onClick={() => setActiveStep(s.id)}
-                  className={`flex items-center space-x-1.5 sm:space-x-2.5 p-1.5 sm:p-2 rounded-lg transition-all text-left ${
+                  className={`flex items-center space-x-2 sm:space-x-3 p-2 sm:p-2.5 rounded-xl transition-all text-left ${
                     isActive
-                      ? 'bg-emerald-500/15 border border-emerald-500/40 text-emerald-400'
+                      ? 'bg-emerald-500/15 border border-emerald-500/50 text-emerald-300 shadow-sm'
                       : isDone
-                      ? 'text-slate-300 hover:bg-slate-800/60'
-                      : 'text-slate-500 hover:bg-slate-800/30'
+                      ? 'bg-slate-800/40 text-slate-300 hover:bg-slate-800/70 border border-transparent'
+                      : 'text-slate-500 hover:bg-slate-800/30 border border-transparent'
                   }`}
                 >
                   <div
-                    className={`w-6 h-6 sm:w-7 sm:h-7 rounded-md flex items-center justify-center flex-shrink-0 text-xs font-bold ${
+                    className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-xs font-bold transition-transform ${
                       isActive
-                        ? 'bg-emerald-500 text-slate-950 font-bold'
+                        ? 'bg-gradient-to-tr from-emerald-500 to-teal-400 text-slate-950 shadow-md shadow-emerald-500/25 scale-105'
                         : isDone
-                        ? 'bg-slate-700 text-slate-200'
-                        : 'bg-slate-800 text-slate-500'
+                        ? 'bg-slate-800 text-emerald-400 border border-emerald-500/30'
+                        : 'bg-slate-800/80 text-slate-500'
                     }`}
                   >
                     {isDone ? '✓' : s.id}
                   </div>
                   <div className="hidden xs:block truncate">
-                    <div className="text-xs font-semibold leading-tight truncate">{s.label}</div>
-                    <div className="text-[10px] text-slate-400 leading-tight hidden sm:block">{s.desc}</div>
+                    <div className={`text-xs font-bold leading-tight truncate ${isActive ? 'text-white' : 'text-slate-300'}`}>
+                      {s.label}
+                    </div>
+                    <div className="text-[10px] text-slate-400 leading-tight hidden sm:block mt-0.5">{s.desc}</div>
                   </div>
                 </button>
               );
@@ -149,7 +186,7 @@ export default function FilingWizardPage() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 flex-1 items-start">
           
           {/* Active Wizard Step (Left/Main Column) */}
-          <div className="lg:col-span-8 bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 sm:p-6 shadow-xl">
+          <div className="lg:col-span-8 bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xl">
             {activeStep === 1 && (
               <Step1Identity
                 profile={profile}
@@ -196,71 +233,94 @@ export default function FilingWizardPage() {
                   <Shield className="w-4 h-4 text-emerald-400" />
                   <span className="text-sm font-bold text-white">Live Tax Summary</span>
                 </div>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                  {regimeComparison.recommended} Regime
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold">
+                  {regimeComparison.recommended} Regime Optimal
                 </span>
+              </div>
+
+              {/* Net Savings Callout */}
+              <div className="mt-3 bg-gradient-to-br from-emerald-950/80 to-slate-900 border border-emerald-500/40 rounded-xl p-3.5 shadow-sm">
+                <span className="text-[11px] text-emerald-300 font-semibold block">Maximum Tax Savings</span>
+                <div className="flex items-baseline justify-between mt-0.5">
+                  <span className="text-2xl font-black text-white font-mono">
+                    ₹{regimeComparison.savingsAmount.toLocaleString('en-IN')}
+                  </span>
+                  <span className="text-[10px] bg-emerald-500 text-slate-950 px-2 py-0.5 rounded font-extrabold uppercase">
+                    Guaranteed
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Comparing Sec 115BAC New vs. Old Regime with Chapter VI-A deductions.
+                </p>
               </div>
 
               {/* Ledger Rows */}
               <div className="py-3 space-y-2 text-xs">
                 <div className="flex justify-between text-slate-400">
-                  <span>Gross Salary</span>
-                  <span className="font-mono text-slate-200">
+                  <span>Gross Salary Income</span>
+                  <span className="font-mono text-slate-200 font-medium">
                     ₹{income.grossSalary.toLocaleString('en-IN')}
                   </span>
                 </div>
 
                 <div className="flex justify-between text-slate-400">
-                  <span>Standard Deduction</span>
-                  <span className="font-mono text-emerald-400">
+                  <span>Standard Deduction (Sec 16ia)</span>
+                  <span className="font-mono text-emerald-400 font-medium">
                     -₹{income.standardDeductionNew.toLocaleString('en-IN')}
                   </span>
                 </div>
 
                 <div className="flex justify-between text-slate-400">
-                  <span>Other Income (AIS)</span>
+                  <span>Other Income (Savings &amp; FD)</span>
                   <span className="font-mono text-slate-200">
                     +₹{(income.savingsInterest + income.fdInterest).toLocaleString('en-IN')}
                   </span>
                 </div>
 
-                <div className="flex justify-between text-slate-400 pt-1 border-t border-slate-800/80">
-                  <span>Taxable Income</span>
+                <div className="flex justify-between text-slate-400 pt-1.5 border-t border-slate-800/80">
+                  <span className="font-semibold text-slate-200">Net Taxable Income</span>
                   <span className="font-mono font-bold text-white">
                     ₹{regimeComparison.newRegime.taxableIncome.toLocaleString('en-IN')}
                   </span>
                 </div>
 
                 <div className="flex justify-between text-slate-400">
-                  <span>New Regime Tax</span>
-                  <span className="font-mono text-slate-200">
+                  <span>Tax Payable (New Regime)</span>
+                  <span className="font-mono text-emerald-300 font-semibold">
                     ₹{regimeComparison.newRegime.totalTaxPayable.toLocaleString('en-IN')}
                   </span>
                 </div>
 
                 <div className="flex justify-between text-slate-400">
-                  <span>Old Regime Tax</span>
-                  <span className="font-mono text-slate-200">
+                  <span>Tax Payable (Old Regime)</span>
+                  <span className="font-mono text-slate-400">
                     ₹{regimeComparison.oldRegime.totalTaxPayable.toLocaleString('en-IN')}
                   </span>
                 </div>
               </div>
 
-              {/* Savings Highlight */}
-              <div className="bg-emerald-950/60 border border-emerald-800/60 rounded-xl p-3 flex items-center justify-between text-xs">
-                <span className="text-emerald-300 font-medium">Net Regime Savings</span>
-                <span className="text-emerald-400 font-bold font-mono text-sm">
-                  ₹{regimeComparison.savingsAmount.toLocaleString('en-IN')}
-                </span>
-              </div>
+              {/* Direct e-Filing CTA Button from Summary Terminal */}
+              <button
+                onClick={() => {
+                  if (activeStep < 4) {
+                    setActiveStep(4);
+                  } else {
+                    setIsApprovalOpen(true);
+                  }
+                }}
+                className="w-full mt-2 py-2.5 bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-bold text-xs rounded-xl flex items-center justify-center space-x-1.5 shadow-md shadow-emerald-500/20 active:scale-95 transition-all"
+              >
+                <span>{activeStep < 4 ? 'Review & Compare Regimes' : 'e-Verify & Transmit Return'}</span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
 
               {/* Direct Link to Ask Gemini */}
               <button
                 onClick={() => setIsAiOpen(true)}
-                className="w-full mt-3 py-2 bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-slate-200 text-xs rounded-xl flex items-center justify-center space-x-1.5 transition-colors"
+                className="w-full mt-2 py-2 bg-slate-800/70 hover:bg-slate-800 border border-slate-700/80 text-slate-300 text-xs rounded-xl flex items-center justify-center space-x-1.5 transition-colors"
               >
                 <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                <span>Ask Gemini Copilot About This</span>
+                <span>Ask Gemini AI Copilot</span>
               </button>
             </div>
           </div>
