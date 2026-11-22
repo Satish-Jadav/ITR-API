@@ -63,6 +63,7 @@ const healthHandler = async (c: any) => {
 };
 
 app.get('/health', healthHandler);
+app.get('/api', healthHandler);
 app.get('/api/health', healthHandler);
 app.get('/api/v1/health', healthHandler);
 app.get('/', healthHandler);
