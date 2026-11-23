@@ -77,7 +77,7 @@ Provide concise, accurate, statutory CBDT tax advice. Never assume mock values. 
         {
           id: 'welcome',
           sender: 'assistant',
-          text: `Namaste ${profile.name}! I am your ZeroTax AI Copilot. For AY 2026-27, with your Gross Salary of ₹${income.grossSalary.toLocaleString('en-IN')}, the ${regime.recommended} Tax Regime is currently optimal, saving you ₹${regime.savingsAmount.toLocaleString('en-IN')}. How can I assist you with your filing today?`,
+          text: `Namaste ${profile.name}! I am your ZeroTax AI Copilot. For AY ${profile.assessmentYear}, I already have your verified Gross Total Income of ₹${(income.grossSalary + income.savingsInterest + income.fdInterest).toLocaleString('en-IN')} on record from your Form 16 / AIS sync. The ${regime.recommended} Tax Regime is currently optimal, saving you ₹${regime.savingsAmount.toLocaleString('en-IN')}. How can I assist you today?`,
           source: isChromeNanoAvailable ? 'chrome-nano' : 'cloud-gemini',
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         },
@@ -146,12 +146,25 @@ Provide concise, accurate, statutory CBDT tax advice. Never assume mock values. 
         } else {
           // Responsive local tax engine answer if offline or API mock-free
           let localReply = '';
-          if (textToSend.toLowerCase().includes('regime') || textToSend.toLowerCase().includes('which')) {
-            localReply = `Under Section 115BAC for AY 2026-27, the New Regime provides a Standard Deduction of ₹75,000 (up from ₹50,000) and full Section 87A rebate up to ₹7,00,000 taxable income. For your salary of ₹${income.grossSalary.toLocaleString('en-IN')}, New Regime tax is ₹${regime.newRegime.totalTaxPayable.toLocaleString('en-IN')}, making it more beneficial.`;
-          } else if (textToSend.toLowerCase().includes('80c') || textToSend.toLowerCase().includes('deduction')) {
-            localReply = `In the Old Regime, you can claim up to ₹1,50,000 under Section 80C, ₹75,000 under 80D, and ₹50,000 in NPS 80CCD(1B). In the New Regime, only Employer NPS u/s 80CCD(2) is allowed in addition to the ₹75,000 standard deduction.`;
+          const q = textToSend.toLowerCase();
+          const totalOther = income.savingsInterest + income.fdInterest + income.otherIncome;
+          const grossTotal = income.grossSalary + totalOther;
+
+          if (q.includes('gross') || q.includes('total income') || q.includes('salary') || q.includes('income')) {
+            localReply = `Your verified Income Details on record (AY ${profile.assessmentYear}):
+• Gross Salary u/s 17(1): ₹${income.grossSalary.toLocaleString('en-IN')}
+• Savings & FD Interest (AIS): ₹${totalOther.toLocaleString('en-IN')}
+• Total Gross Income: ₹${grossTotal.toLocaleString('en-IN')}
+• Standard Deduction: ₹${income.standardDeductionNew.toLocaleString('en-IN')}
+• Net Taxable Income (${regime.recommended}): ₹${(regime.recommended === 'NEW' ? regime.newRegime.taxableIncome : regime.oldRegime.taxableIncome).toLocaleString('en-IN')}
+
+✓ Pre-filled directly from your Form 16 Part B and AIS records. You do not need to re-enter your income!`;
+          } else if (q.includes('regime') || q.includes('which')) {
+            localReply = `Under Section 115BAC for AY ${profile.assessmentYear}, the ${regime.recommended} Tax Regime is optimal for your gross salary of ₹${income.grossSalary.toLocaleString('en-IN')}. It saves you ₹${regime.savingsAmount.toLocaleString('en-IN')} in taxes. Net Tax Payable: ₹${(regime.recommended === 'NEW' ? regime.newRegime.totalTaxPayable : regime.oldRegime.totalTaxPayable).toLocaleString('en-IN')}.`;
+          } else if (q.includes('80c') || q.includes('deduction') || q.includes('save')) {
+            localReply = `In the Old Regime, you have ₹${deductions.sec80C.toLocaleString('en-IN')} in Section 80C, ₹${(deductions.sec80D_Self + deductions.sec80D_Parents).toLocaleString('en-IN')} in 80D, and ₹${deductions.sec80CCD_1B.toLocaleString('en-IN')} in NPS. In the New Regime, standard deduction of ₹${income.standardDeductionNew.toLocaleString('en-IN')} is auto-applied with zero paperwork.`;
           } else {
-            localReply = `Based on CBDT AY 2026-27 guidelines: Your PAN ${profile.pan} is linked with Aadhaar and bank account ${profile.bankAccountMasked} is validated. Net recommended filing regime is ${regime.recommended}.`;
+            localReply = `Based on CBDT AY ${profile.assessmentYear} records: Taxpayer ${profile.name} (PAN: ${profile.pan}) has verified Gross Total Income of ₹${grossTotal.toLocaleString('en-IN')}. Net tax payable under ${regime.recommended} Regime is ₹${(regime.recommended === 'NEW' ? regime.newRegime.totalTaxPayable : regime.oldRegime.totalTaxPayable).toLocaleString('en-IN')}.`;
           }
           setMessages((prev) => [
             ...prev,
@@ -182,10 +195,10 @@ Provide concise, accurate, statutory CBDT tax advice. Never assume mock values. 
   };
 
   const samplePrompts = [
+    'What is my Gross Total Income?',
     'Why is New Regime recommended for me?',
-    'How does Section 87A rebate work in AY 2026-27?',
     'What deductions can I claim for NPS 80CCD(1B)?',
-    'Reconcile my Form 16 and 26AS data',
+    'Reconcile my Form 16 and AIS data',
   ];
 
   if (!isOpen) return null;

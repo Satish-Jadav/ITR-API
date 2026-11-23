@@ -1,16 +1,16 @@
 {
   "name": "zerotax",
   "version": "2026.1.0",
-  "description": "ZeroTax — Next.js Direct-to-CBDT ITR Web & API Platform",
+  "description": "ZeroTax \u2014 Next.js Direct-to-CBDT ITR Web & API Platform",
   "private": true,
   "type": "module",
   "engines": {
     "node": ">=20.0.0"
   },
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "node init && next dev",
+    "build": "node init && next build",
+    "start": "node init && next start",
     "lint": "tsc --noEmit",
     "test": "tsx scripts/test-api.ts",
     "db:generate": "drizzle-kit generate",
